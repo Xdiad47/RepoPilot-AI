@@ -1,0 +1,36 @@
+# Separate nginx server block for the RepoPilot AI API. It does not touch any existing site.
+# Rendered by deploy/scripts/install-nginx.sh (replaces __API_DOMAIN__ and __UPSTREAM_PORT__).
+# HTTPS is added afterwards by:  certbot --nginx -d __API_DOMAIN__   (requires the DNS A record to resolve first)
+
+# Per-IP request throttle for this site only (zone name is unique to RepoPilot).
+limit_req_zone $binary_remote_addr zone=repopilot_api:10m rate=10r/s;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __API_DOMAIN__;
+
+    client_max_body_size 64k;
+
+    # The FastAPI port is bound to 127.0.0.1 and is never exposed publicly; only nginx reaches it.
+    location / {
+        limit_req zone=repopilot_api burst=20 nodelay;
+
+        proxy_pass http://127.0.0.1:__UPSTREAM_PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+
+        # Server-sent events (live progress): no buffering, long-lived connections.
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+}

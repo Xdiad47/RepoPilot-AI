@@ -1,0 +1,39 @@
+[Unit]
+Description=RepoPilot AI backend (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PYTHONDONTWRITEBYTECODE=1
+User=repopilot
+Group=repopilot
+WorkingDirectory=/opt/repopilot/backend
+EnvironmentFile=/etc/repopilot/backend.env
+# One worker on purpose: investigation state is held in memory. Bound to loopback; nginx is the only way in.
+ExecStart=/opt/repopilot/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8200 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-server-header
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+# Resource limits: this VPS is shared with production sites.
+MemoryMax=512M
+CPUQuota=70%
+TasksMax=256
+LimitNOFILE=4096
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/repopilot
+
+[Install]
+WantedBy=multi-user.target
