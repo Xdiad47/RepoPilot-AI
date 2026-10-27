@@ -6,7 +6,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: { default: "RepoPilot AI — Find the bug. Understand the cause. Verify the fix.", template: "%s · RepoPilot AI" },
+  title: { default: "RepoPilot AI — Find the bug. Understand the cause. Fix it with evidence.", template: "%s · RepoPilot AI" },
   description:
     "Evidence-based AI code repair for public GitHub repositories: root-cause analysis, minimal patches, and honest, sandboxed test validation.",
   applicationName: "RepoPilot AI",

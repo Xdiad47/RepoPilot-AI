@@ -1,12 +1,19 @@
 # RepoPilot AI
 
-**Find the bug. Understand the cause. Verify the fix.**
+**Find the bug. Understand the cause. Fix it with evidence.**
 
 RepoPilot AI is a multi-agent code-repair system. Give it a public GitHub repository and a bug report; it inspects the
 real source, proves its diagnosis with code quoted from the repo, proposes a minimal patch, and (when a sandbox is
 available) runs the project's tests before and after the patch. It never claims a fix it didn't verify.
 
-Built for the **AMD AI League × lablab.ai – Match 5: AI-Powered Code Repository Repair**.
+**Live:** https://repo-pilot-ai-three.vercel.app · **API health:** https://repopilot-api.scanlyy.in/api/health
+
+![RepoPilot AI home](docs/screenshots/home.png)
+
+![A completed investigation](docs/screenshots/result.png)
+
+> The public demo runs with test validation **off** (the server is shared), so patches there are shown as
+> *proposals — not tested*. With a sandbox enabled, the same pipeline runs the tests before and after the patch.
 
 > **The core idea is honest, evidence-based repair.** Every cited line is checked against the actual file, every patch
 > is re-validated before it is shown, and validation is one of `passed`, `failed`, `inconclusive` or `not_run`, taken

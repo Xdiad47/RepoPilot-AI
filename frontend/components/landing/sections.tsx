@@ -28,7 +28,7 @@ function SectionHeading({ id, eyebrow, title, children }: { id: string; eyebrow:
 export function HowItWorks() {
   return (
     <section id="how-it-works" aria-labelledby="how-heading" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
-      <SectionHeading id="how-heading" eyebrow="Workflow" title="From bug report to verified patch">
+      <SectionHeading id="how-heading" eyebrow="Workflow" title="From bug report to evidence-backed patch">
         Four stages, each one visible in real time while it runs.
       </SectionHeading>
       <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -74,7 +74,7 @@ export function SiteFooter() {
   return (
     <footer className="border-t border-border">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 py-6 text-xs text-faint sm:flex-row sm:px-6">
-        <p>RepoPilot AI — AI-powered code repository repair. Built for the AMD AI League × lablab.ai.</p>
+        <p>RepoPilot AI — evidence-based, AI-assisted code repair for public GitHub repositories.</p>
         <p>AI-generated patches can be wrong. Always review before merging.</p>
       </div>
     </footer>
