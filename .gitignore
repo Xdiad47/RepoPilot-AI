@@ -1,0 +1,36 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_ed25519*
+*service-account*.json
+
+# Logs / OS / editor
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# Backend
+backend/.venv/
+backend/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+backend/.data/
+backend/.workspaces/
+htmlcov/
+.coverage
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+coverage/
