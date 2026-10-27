@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* RepoPilot design tokens. Dark is the default developer-tool look; light follows the OS setting. */
+:root {
+  color-scheme: dark;
+  --bg: #0a0c11;
+  --surface: #11141b;
+  --surface-2: #171b24;
+  --border: #252b38;
+  --border-strong: #343c4e;
+  --fg: #e8ebf2;
+  --muted: #8d97ab;
+  --faint: #5d667a;
+  --accent: #7c8cff;
+  --accent-2: #3de0cf;
+  --accent-fg: #0a0c11;
+  --success: #3ddc97;
+  --success-bg: rgb(61 220 151 / 0.12);
+  --danger: #ff6b7a;
+  --danger-bg: rgb(255 107 122 / 0.12);
+  --warning: #f5b74a;
+  --warning-bg: rgb(245 183 74 / 0.12);
+  --info: #6cb6ff;
+  --info-bg: rgb(108 182 255 / 0.12);
+  --diff-add: rgb(61 220 151 / 0.14);
+  --diff-add-strong: rgb(61 220 151 / 0.28);
+  --diff-del: rgb(255 107 122 / 0.14);
+  --diff-del-strong: rgb(255 107 122 / 0.28);
+  --focus: rgb(124 140 255 / 0.55);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f6f7fb;
+    --surface: #ffffff;
+    --surface-2: #f0f2f8;
+    --border: #dfe3ee;
+    --border-strong: #c7cddd;
+    --fg: #141824;
+    --muted: #596277;
+    --faint: #8a93a8;
+    --accent: #4f5df0;
+    --accent-2: #0ea5a0;
+    --accent-fg: #ffffff;
+    --success: #0f8f5c;
+    --success-bg: rgb(15 143 92 / 0.1);
+    --danger: #d12f45;
+    --danger-bg: rgb(209 47 69 / 0.09);
+    --warning: #a96800;
+    --warning-bg: rgb(169 104 0 / 0.1);
+    --info: #1f6fd1;
+    --info-bg: rgb(31 111 209 / 0.09);
+    --diff-add: rgb(15 143 92 / 0.11);
+    --diff-add-strong: rgb(15 143 92 / 0.25);
+    --diff-del: rgb(209 47 69 / 0.1);
+    --diff-del-strong: rgb(209 47 69 / 0.24);
+    --focus: rgb(79 93 240 / 0.45);
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle grid + glow behind the hero. Purely decorative. */
+.hero-glow {
+  background:
+    radial-gradient(60rem 28rem at 50% -10%, rgb(124 140 255 / 0.22), transparent 60%),
+    radial-gradient(40rem 22rem at 85% 10%, rgb(61 224 207 / 0.12), transparent 60%);
+}
+
+.grid-fade {
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 70%);
+  opacity: 0.35;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(124 140 255 / 0.35);
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
