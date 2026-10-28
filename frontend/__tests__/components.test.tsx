@@ -26,7 +26,10 @@ vi.mock("@/hooks/use-investigation", async (importOriginal) => {
   return { ...actual, useInvestigation: hookMock.useInvestigation };
 });
 
+import { EvidenceTrail } from "@/components/landing/evidence-trail";
 import { RepairForm, validateForm } from "@/components/landing/repair-form";
+import { Faq } from "@/components/landing/sections";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { InvestigationView } from "@/components/investigation/investigation-view";
 import { stageStates } from "@/components/investigation/stages";
 import { mergeEvent } from "@/hooks/use-investigation";
@@ -93,6 +96,16 @@ describe("RepairForm", () => {
     });
     expect(window.localStorage.getItem("repopilot:recent:v1")).toContain(ID);
     expect(window.localStorage.getItem("repopilot:recent:v1")).not.toMatch(/api[_-]?key|token/i);
+  });
+
+  it("accepts owner/repository shorthand and sends the full URL", async () => {
+    apiMock.createRepair.mockResolvedValue({ repair_id: ID, status: "queued", status_url: "", events_url: "" });
+    render(<RepairForm />);
+    await userEvent.type(screen.getByLabelText("GitHub repository"), "octocat/hello");
+    await userEvent.type(screen.getByLabelText(/what's going wrong/i), "Signup crashes when the email is empty");
+    await userEvent.click(screen.getByRole("button", { name: /analyze repository/i }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith(`/investigation/${ID}`));
+    expect(apiMock.createRepair).toHaveBeenCalledWith(expect.objectContaining({ repository_url: "https://github.com/octocat/hello" }));
   });
 
   it("shows a loading state while the request is in flight", async () => {
@@ -349,5 +362,58 @@ describe("honesty of the not-run result", () => {
     expect(screen.queryByText("Before the patch")).not.toBeInTheDocument();
     expect(screen.queryByText("After the patch")).not.toBeInTheDocument();
     expect(screen.queryByText(/\d+ passed/)).not.toBeInTheDocument();
+  });
+});
+
+describe("What to do next", () => {
+  it("guides the visitor and opens the code changes", async () => {
+    showing({ investigation: investigation({ result: result({ validation: notRun }) }) });
+    render(<InvestigationView id={ID} />);
+    expect(screen.getByText("What to do next")).toBeInTheDocument();
+    expect(screen.getByText(/was not tested here/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /view the code changes/i }));
+    expect(screen.getByRole("tab", { name: /code changes/i })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("does not claim a patch was tested when it was not, and only suggests a final check when it passed", () => {
+    showing({ investigation: investigation({ result: result({ validation: passed }) }) });
+    render(<InvestigationView id={ID} />);
+    expect(screen.queryByText(/was not tested here/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/final check before merging/i)).toBeInTheDocument();
+  });
+
+  it("is hidden when there is no patch to act on", () => {
+    showing({ investigation: investigation({ result: result({ outcome: "insufficient_evidence", changes: [], diff: "", regression_test: null }) }) });
+    render(<InvestigationView id={ID} />);
+    expect(screen.queryByText("What to do next")).not.toBeInTheDocument();
+  });
+});
+
+describe("landing page content", () => {
+  it("explains in the FAQ why a patch can be untested, without overclaiming", () => {
+    render(<Faq />);
+    const question = screen.getByText(/why does a patch say/i);
+    expect(question).toBeInTheDocument();
+    expect(screen.getByText(/shown as a proposal/i)).toBeInTheDocument();
+    expect(screen.getByText(/never pushes code or opens pull requests/i)).toBeInTheDocument();
+  });
+
+  it("labels the sample result as an unexecuted proposal", () => {
+    render(<EvidenceTrail />);
+    expect(screen.getByText(/quote found in the file/i)).toBeInTheDocument();
+    expect(screen.getByText(/test validation is switched off/i)).toBeInTheDocument();
+  });
+});
+
+describe("ThemeToggle", () => {
+  it("switches the theme, remembers it, and labels the next action", async () => {
+    document.documentElement.dataset.theme = "dark";
+    render(<ThemeToggle />);
+    await userEvent.click(screen.getByRole("button", { name: /switch to light theme/i }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(window.localStorage.getItem("repopilot-theme")).toBe("light");
+    expect(screen.getByRole("button", { name: /switch to dark theme/i })).toBeInTheDocument();
+    delete document.documentElement.dataset.theme;
+    window.localStorage.removeItem("repopilot-theme");
   });
 });

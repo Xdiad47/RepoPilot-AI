@@ -1,14 +1,16 @@
-import { FileCode2, ListChecks, TriangleAlert } from "lucide-react";
+import { ArrowRight, FileCode2, ListChecks, TriangleAlert } from "lucide-react";
 import { ValidationBadge } from "@/components/investigation/validation-badge";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-button";
 import { verdictFor } from "@/lib/verdict";
 import type { Level, RepairResult } from "@/types/api";
 
 const levelTone: Record<Level, "success" | "warning" | "danger"> = { high: "success", medium: "warning", low: "danger" };
 
-export function OverviewTab({ result }: { result: RepairResult }) {
+export function OverviewTab({ result, onViewChanges }: { result: RepairResult; onViewChanges?: () => void }) {
   const verdict = verdictFor(result);
   const additions = result.changes.reduce((n, c) => n + c.additions, 0);
   const deletions = result.changes.reduce((n, c) => n + c.deletions, 0);
@@ -19,6 +21,8 @@ export function OverviewTab({ result }: { result: RepairResult }) {
       <Alert tone={verdict.tone} title={verdict.headline}>
         {verdict.detail}
       </Alert>
+
+      {result.changes.length > 0 ? <NextSteps tested={result.validation.status === "passed"} onViewChanges={onViewChanges} /> : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Metric label="Confidence">
@@ -96,6 +100,45 @@ export function OverviewTab({ result }: { result: RepairResult }) {
         <ListCard title="Limitations" items={result.limitations} empty="None reported." warn />
       </div>
     </div>
+  );
+}
+
+function NextSteps({ tested, onViewChanges }: { tested: boolean; onViewChanges?: () => void }) {
+  return (
+    <Card className="border-accent/30">
+      <CardHeader>
+        <CardTitle>What to do next</CardTitle>
+      </CardHeader>
+      <CardBody>
+        <ol className="space-y-3 text-sm leading-6">
+          <li className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="font-mono text-xs text-faint">01</span>
+            <span className="min-w-[14rem] flex-1">Read the proposed change and the evidence behind it.</span>
+            {onViewChanges ? (
+              <Button variant="primary" size="sm" onClick={onViewChanges}>
+                View the code changes <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              </Button>
+            ) : null}
+          </li>
+          <li className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="font-mono text-xs text-faint">02</span>
+            <span className="min-w-[14rem] flex-1">
+              Download the patch from the Code Changes tab and apply it to your copy:{" "}
+              <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[12px]">git apply repopilot.patch</code>
+            </span>
+            <CopyButton text="git apply repopilot.patch" label="Copy command" className="border border-border" />
+          </li>
+          <li className="flex gap-3">
+            <span className="font-mono text-xs text-faint">03</span>
+            <span>
+              {tested
+                ? "Run your own test suite as a final check before merging."
+                : "This patch was not tested here, so run your own test suite before merging."}
+            </span>
+          </li>
+        </ol>
+      </CardBody>
+    </Card>
   );
 }
 

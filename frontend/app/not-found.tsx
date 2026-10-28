@@ -5,7 +5,7 @@ export default function NotFound() {
   return (
     <>
       <SiteHeader />
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <NotFoundState invalid />
       </main>
     </>

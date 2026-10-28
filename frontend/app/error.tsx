@@ -9,7 +9,7 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto w-full max-w-xl flex-1 px-4 py-24">
+      <main id="main" className="mx-auto w-full max-w-xl flex-1 px-4 py-24">
         <Alert
           tone="danger"
           title="Something went wrong"

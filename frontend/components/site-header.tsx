@@ -1,21 +1,25 @@
+import Link from "next/link";
 import { Logo } from "@/components/brand/logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-bg/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Logo />
-        <nav className="flex items-center gap-4 text-sm text-muted">
-          <a href="#how-it-works" className="hidden hover:text-fg sm:inline">How it works</a>
-          <a href="#trust" className="hidden hover:text-fg sm:inline">Safety</a>
+        <nav aria-label="Main" className="flex items-center gap-3 text-sm text-muted sm:gap-4">
+          <Link href="/#how-it-works" className="hidden hover:text-fg md:inline">How it works</Link>
+          <Link href="/#trust" className="hidden hover:text-fg md:inline">Safety</Link>
+          <Link href="/#faq" className="hidden hover:text-fg md:inline">FAQ</Link>
           <a
             href="https://github.com/Xdiad47/RepoPilot-AI"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:border-border-strong hover:text-fg"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 transition-colors hover:border-border-strong hover:text-fg"
           >
             <GithubMark /> GitHub
           </a>
+          <ThemeToggle />
         </nav>
       </div>
     </header>

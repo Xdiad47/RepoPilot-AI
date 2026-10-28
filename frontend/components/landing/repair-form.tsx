@@ -12,7 +12,7 @@ import { useHealth } from "@/hooks/use-health";
 import { api, ApiError, describeError } from "@/lib/api";
 import { EXAMPLES, type ExampleBug } from "@/lib/examples";
 import { saveRecent } from "@/lib/storage";
-import { cn, isGithubUrl } from "@/lib/utils";
+import { cn, isGithubUrl, normalizeRepoInput } from "@/lib/utils";
 
 const LIMITS = { bug: 4000, trace: 8000 };
 
@@ -61,7 +61,9 @@ export function RepairForm() {
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    const found = validateForm(repo, bug, trace);
+    const repoUrl = normalizeRepoInput(repo);
+    if (repoUrl !== repo) setRepo(repoUrl);
+    const found = validateForm(repoUrl, bug, trace);
     setErrors(found);
     setSubmitError(null);
     if (Object.keys(found).length > 0) return;
@@ -69,11 +71,11 @@ export function RepairForm() {
     setSubmitting(true);
     try {
       const accepted = await api.createRepair({
-        repository_url: repo.trim(),
+        repository_url: repoUrl,
         bug_description: bug.trim(),
         stack_trace: trace.trim() || null,
       });
-      saveRecent({ id: accepted.repair_id, repositoryUrl: repo.trim(), bug });
+      saveRecent({ id: accepted.repair_id, repositoryUrl: repoUrl, bug });
       router.push(`/investigation/${accepted.repair_id}`);
     } catch (e) {
       // Map server-side field errors back onto the form.
@@ -95,7 +97,7 @@ export function RepairForm() {
 
       <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Example bug reports">
         <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium text-muted">
-          <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden /> Try an example
+          <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden /> Not sure where to start? Try an example
         </span>
         {EXAMPLES.map((example) => (
           <button
@@ -119,7 +121,7 @@ export function RepairForm() {
       <form
         onSubmit={onSubmit}
         noValidate
-        className="space-y-5 rounded-2xl border border-border bg-surface p-5 shadow-2xl shadow-black/20 sm:p-6"
+        className="space-y-5 rounded-2xl border border-border bg-surface p-5 shadow-xl shadow-black/10 sm:p-6"
       >
         {configBlocked ? (
           <Alert tone="danger" title={health.kind === "ok" ? "AI provider not configured" : "Missing configuration"}>
@@ -134,7 +136,7 @@ export function RepairForm() {
           </Alert>
         ) : null}
 
-        <Field label="GitHub repository" htmlFor={`${ids}-repo`} error={errors.repo} hint="Public repositories only.">
+        <Field label="GitHub repository" htmlFor={`${ids}-repo`} error={errors.repo} hint="Public repositories only. Paste the full link, or just owner/repository.">
           <Input
             id={`${ids}-repo`}
             name="repository_url"
@@ -142,7 +144,7 @@ export function RepairForm() {
             inputMode="url"
             autoComplete="off"
             spellCheck={false}
-            placeholder="https://github.com/owner/repository"
+            placeholder="https://github.com/owner/repository or owner/repository"
             value={repo}
             invalid={Boolean(errors.repo)}
             aria-describedby={errors.repo ? `${ids}-repo-error` : undefined}

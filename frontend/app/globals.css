@@ -1,62 +1,103 @@
 @import "tailwindcss";
 
-/* RepoPilot design tokens. Dark is the default developer-tool look; light follows the OS setting. */
+/*
+ * RepoPilot design tokens.
+ * Identity: "flight deck" — warm graphite + signal orange (dark) / paper + ink (light), with teal reserved for
+ * "verified". Dark is the default; light follows the OS unless the visitor picks a theme (data-theme on <html>).
+ */
 :root {
   color-scheme: dark;
-  --bg: #0a0c11;
-  --surface: #11141b;
-  --surface-2: #171b24;
-  --border: #252b38;
-  --border-strong: #343c4e;
-  --fg: #e8ebf2;
-  --muted: #8d97ab;
-  --faint: #5d667a;
-  --accent: #7c8cff;
-  --accent-2: #3de0cf;
-  --accent-fg: #0a0c11;
-  --success: #3ddc97;
-  --success-bg: rgb(61 220 151 / 0.12);
-  --danger: #ff6b7a;
-  --danger-bg: rgb(255 107 122 / 0.12);
-  --warning: #f5b74a;
-  --warning-bg: rgb(245 183 74 / 0.12);
+  --bg: #0e0f11;
+  --surface: #151618;
+  --surface-2: #1c1d20;
+  --border: #2b2c31;
+  --border-strong: #3d3f46;
+  --fg: #efede7;
+  --muted: #a09e96;
+  --faint: #7c7a72;
+  --accent: #ff6b35;
+  --accent-2: #4fd1b0;
+  --accent-fg: #17110d;
+  --success: #46d39a;
+  --success-bg: rgb(70 211 154 / 0.12);
+  --danger: #ff6b6b;
+  --danger-bg: rgb(255 107 107 / 0.12);
+  --warning: #f2c14e;
+  --warning-bg: rgb(242 193 78 / 0.12);
   --info: #6cb6ff;
   --info-bg: rgb(108 182 255 / 0.12);
-  --diff-add: rgb(61 220 151 / 0.14);
-  --diff-add-strong: rgb(61 220 151 / 0.28);
-  --diff-del: rgb(255 107 122 / 0.14);
-  --diff-del-strong: rgb(255 107 122 / 0.28);
-  --focus: rgb(124 140 255 / 0.55);
+  --diff-add: rgb(70 211 154 / 0.14);
+  --diff-add-strong: rgb(70 211 154 / 0.28);
+  --diff-del: rgb(255 107 107 / 0.14);
+  --diff-del-strong: rgb(255 107 107 / 0.28);
+  --focus: rgb(255 107 53 / 0.6);
+  --glow-a: rgb(255 107 53 / 0.16);
+  --glow-b: rgb(79 209 176 / 0.08);
+  --selection: rgb(255 107 53 / 0.35);
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --bg: #f6f7fb;
-    --surface: #ffffff;
-    --surface-2: #f0f2f8;
-    --border: #dfe3ee;
-    --border-strong: #c7cddd;
-    --fg: #141824;
-    --muted: #596277;
-    --faint: #8a93a8;
-    --accent: #4f5df0;
-    --accent-2: #0ea5a0;
+    --bg: #f7f4ed;
+    --surface: #fffdf8;
+    --surface-2: #f0ece2;
+    --border: #e2dccd;
+    --border-strong: #cbc4b1;
+    --fg: #1d1b16;
+    --muted: #5d5a4f;
+    --faint: #7a7666;
+    --accent: #c2410c;
+    --accent-2: #0f766e;
     --accent-fg: #ffffff;
-    --success: #0f8f5c;
-    --success-bg: rgb(15 143 92 / 0.1);
-    --danger: #d12f45;
-    --danger-bg: rgb(209 47 69 / 0.09);
-    --warning: #a96800;
-    --warning-bg: rgb(169 104 0 / 0.1);
+    --success: #0f8a5a;
+    --success-bg: rgb(15 138 90 / 0.1);
+    --danger: #c62839;
+    --danger-bg: rgb(198 40 57 / 0.09);
+    --warning: #8f5a00;
+    --warning-bg: rgb(143 90 0 / 0.1);
     --info: #1f6fd1;
     --info-bg: rgb(31 111 209 / 0.09);
-    --diff-add: rgb(15 143 92 / 0.11);
-    --diff-add-strong: rgb(15 143 92 / 0.25);
-    --diff-del: rgb(209 47 69 / 0.1);
-    --diff-del-strong: rgb(209 47 69 / 0.24);
-    --focus: rgb(79 93 240 / 0.45);
+    --diff-add: rgb(15 138 90 / 0.11);
+    --diff-add-strong: rgb(15 138 90 / 0.25);
+    --diff-del: rgb(198 40 57 / 0.1);
+    --diff-del-strong: rgb(198 40 57 / 0.24);
+    --focus: rgb(194 65 12 / 0.5);
+    --glow-a: rgb(194 65 12 / 0.1);
+    --glow-b: rgb(15 118 110 / 0.07);
+    --selection: rgb(194 65 12 / 0.25);
   }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f4ed;
+  --surface: #fffdf8;
+  --surface-2: #f0ece2;
+  --border: #e2dccd;
+  --border-strong: #cbc4b1;
+  --fg: #1d1b16;
+  --muted: #5d5a4f;
+  --faint: #7a7666;
+  --accent: #c2410c;
+  --accent-2: #0f766e;
+  --accent-fg: #ffffff;
+  --success: #0f8a5a;
+  --success-bg: rgb(15 138 90 / 0.1);
+  --danger: #c62839;
+  --danger-bg: rgb(198 40 57 / 0.09);
+  --warning: #8f5a00;
+  --warning-bg: rgb(143 90 0 / 0.1);
+  --info: #1f6fd1;
+  --info-bg: rgb(31 111 209 / 0.09);
+  --diff-add: rgb(15 138 90 / 0.11);
+  --diff-add-strong: rgb(15 138 90 / 0.25);
+  --diff-del: rgb(198 40 57 / 0.1);
+  --diff-del-strong: rgb(198 40 57 / 0.24);
+  --focus: rgb(194 65 12 / 0.5);
+  --glow-a: rgb(194 65 12 / 0.1);
+  --glow-b: rgb(15 118 110 / 0.07);
+  --selection: rgb(194 65 12 / 0.25);
 }
 
 @theme inline {
@@ -79,12 +120,16 @@
   --color-warning-bg: var(--warning-bg);
   --color-info: var(--info);
   --color-info-bg: var(--info-bg);
+  --color-diff-add: var(--diff-add);
+  --color-diff-del: var(--diff-del);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: var(--font-display-serif), ui-serif, Georgia, "Times New Roman", serif;
 }
 
 html {
   background: var(--bg);
+  scroll-behavior: smooth;
 }
 
 body {
@@ -94,11 +139,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Subtle grid + glow behind the hero. Purely decorative. */
+/* Warm glow + faint grid behind the hero. Purely decorative. */
 .hero-glow {
   background:
-    radial-gradient(60rem 28rem at 50% -10%, rgb(124 140 255 / 0.22), transparent 60%),
-    radial-gradient(40rem 22rem at 85% 10%, rgb(61 224 207 / 0.12), transparent 60%);
+    radial-gradient(60rem 28rem at 50% -10%, var(--glow-a), transparent 60%),
+    radial-gradient(40rem 22rem at 90% 5%, var(--glow-b), transparent 60%);
 }
 
 .grid-fade {
@@ -107,7 +152,7 @@ body {
     linear-gradient(to bottom, var(--border) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 70%);
-  opacity: 0.35;
+  opacity: 0.3;
 }
 
 :focus-visible {
@@ -116,7 +161,7 @@ body {
 }
 
 ::selection {
-  background: rgb(124 140 255 / 0.35);
+  background: var(--selection);
 }
 
 .scroll-thin {
@@ -124,7 +169,18 @@ body {
   scrollbar-color: var(--border-strong) transparent;
 }
 
+/* FAQ accordion: native <details>, so it works without JavaScript. */
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   * {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;

@@ -3,7 +3,7 @@ import { ApiError, api, describeError } from "@/lib/api";
 import { resolveApiBaseUrl } from "@/lib/config";
 import { parseUnifiedDiff } from "@/lib/diff";
 import { clearRecent, loadRecent, saveRecent } from "@/lib/storage";
-import { formatDuration, formatKb, isGithubUrl, truncate } from "@/lib/utils";
+import { formatDuration, formatKb, isGithubUrl, normalizeRepoInput, truncate } from "@/lib/utils";
 import { verdictFor } from "@/lib/verdict";
 import { DIFF, notRun, passed, result } from "./fixtures";
 
@@ -15,6 +15,21 @@ describe("isGithubUrl", () => {
   it.each(["", "github.com/o/r", "http://github.com/o/r", "https://gitlab.com/o/r", "https://github.com/o", "https://github.com/o/r/tree/main", "git@github.com:o/r.git", "https://github.com/o/r?x=1", "https://github.com/-o/r", "https://evil.com/github.com/o/r"])(
     "rejects %s",
     (url) => expect(isGithubUrl(url)).toBe(false),
+  );
+});
+
+describe("normalizeRepoInput", () => {
+  it.each([
+    ["octocat/hello", "https://github.com/octocat/hello"],
+    ["  octocat/hello-world.js  ", "https://github.com/octocat/hello-world.js"],
+    ["github.com/octocat/hello", "https://github.com/octocat/hello"],
+    ["www.github.com/octocat/hello", "https://www.github.com/octocat/hello"],
+    ["https://github.com/octocat/hello", "https://github.com/octocat/hello"],
+  ])("turns %j into %j", (input, expected) => expect(normalizeRepoInput(input)).toBe(expected));
+
+  it.each(["", "nope", "https://gitlab.com/o/r", "http://github.com/o/r", "a/b/c", "git@github.com:o/r.git"])(
+    "leaves %j alone so validation can reject it",
+    (input) => expect(isGithubUrl(normalizeRepoInput(input))).toBe(false),
   );
 });
 

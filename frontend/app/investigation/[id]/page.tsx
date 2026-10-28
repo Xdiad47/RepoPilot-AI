@@ -10,7 +10,7 @@ export default function InvestigationPage(props: PageProps<"/investigation/[id]"
   return (
     <>
       <SiteHeader />
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         {/* `params` is runtime data, so it is read inside a Suspense boundary (Cache Components). */}
         <Suspense fallback={<WorkspaceSkeleton />}>
           <Resolved params={props.params} />

@@ -38,9 +38,9 @@ export function ProgressTimeline({ investigation }: { investigation: Investigati
   const running = investigation.status === "running" || investigation.status === "queued";
 
   useEffect(() => {
-    // Follow new events inside the log only; never scroll the page itself.
+    // Follow new events inside the log only (never the page); once finished, start from the first event again.
     const log = logRef.current;
-    if (running && log) log.scrollTop = log.scrollHeight;
+    if (log) log.scrollTop = running ? log.scrollHeight : 0;
   }, [investigation.events.length, running]);
 
   return (

@@ -57,7 +57,8 @@ function Workspace({ investigation, connection }: { investigation: Investigation
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
-        <aside className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:self-start">
+        {/* Once there is a result, put it first on small screens; the log and bug report move below it. */}
+        <aside className={cn("min-w-0 space-y-4 lg:sticky lg:top-20 lg:self-start", result && "max-lg:order-last")}>
           <BugReport investigation={investigation} />
           <ProgressTimeline investigation={investigation} />
         </aside>
@@ -69,7 +70,7 @@ function Workspace({ investigation, connection }: { investigation: Investigation
 
           {active && !result ? (
             <Alert tone="info" title={investigation.status === "queued" ? "Waiting for a free worker…" : "Investigation in progress"}>
-              Results appear here as each step finishes. Everything below comes from the live backend.
+              This usually takes 10 to 60 seconds. You can keep this page open: results appear here as each step finishes.
             </Alert>
           ) : null}
 
@@ -82,8 +83,9 @@ function Workspace({ investigation, connection }: { investigation: Investigation
 
 function ResultTabs({ investigation }: { investigation: Investigation }) {
   const result = investigation.result!;
+  const [tab, setTab] = useState("overview");
   return (
-    <Tabs defaultValue="overview">
+    <Tabs value={tab} onValueChange={setTab}>
       <TabsList aria-label="Investigation results">
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="root-cause">Root Cause</TabsTrigger>
@@ -97,7 +99,7 @@ function ResultTabs({ investigation }: { investigation: Investigation }) {
         </TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
-        <OverviewTab result={result} />
+        <OverviewTab result={result} onViewChanges={() => setTab("changes")} />
       </TabsContent>
       <TabsContent value="root-cause">
         <RootCauseTab result={result} />

@@ -39,3 +39,11 @@ export function isGithubUrl(value: string): boolean {
   const v = value.trim();
   return GITHUB_URL.test(v) && !/\/(\.|\.\.)$/.test(v.replace(/\.git\/?$/, ""));
 }
+
+/** Accepts "owner/repo" or "github.com/owner/repo" as shorthand and returns a full https URL; anything else comes back trimmed. */
+export function normalizeRepoInput(value: string): string {
+  const v = value.trim();
+  if (/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(v)) return `https://github.com/${v}`;
+  if (/^(www\.)?github\.com\//i.test(v)) return `https://${v}`;
+  return v;
+}
