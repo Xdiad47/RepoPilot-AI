@@ -3,6 +3,7 @@
 import { ArrowLeft, ChevronDown, Clock, Radio } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { RefreshOnBack } from "@/components/refresh-on-back";
 import { CodeChangesTab, type Decision, type Decisions } from "@/components/investigation/code-changes-tab";
 import { LiveStatus } from "@/components/investigation/live-status";
 import { OverviewTab } from "@/components/investigation/overview-tab";
@@ -23,8 +24,12 @@ import { statusLabel } from "@/lib/verdict";
 import type { Investigation } from "@/types/api";
 
 export function InvestigationView({ id }: { id: string }) {
-  if (!INVESTIGATION_ID.test(id)) return <NotFoundState invalid />;
-  return <Loaded id={id} />;
+  return (
+    <>
+      <RefreshOnBack />
+      {INVESTIGATION_ID.test(id) ? <Loaded id={id} /> : <NotFoundState invalid />}
+    </>
+  );
 }
 
 function Loaded({ id }: { id: string }) {

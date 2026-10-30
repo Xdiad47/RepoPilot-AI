@@ -1,6 +1,7 @@
 import { EvidenceTrail } from "@/components/landing/evidence-trail";
 import { RepairForm } from "@/components/landing/repair-form";
 import { Faq, HowItWorks, SiteFooter, TrustSection } from "@/components/landing/sections";
+import { RefreshOnBack } from "@/components/refresh-on-back";
 import { SiteHeader } from "@/components/site-header";
 
 const quickSteps = ["Paste a repository link", "Describe the bug", "Review the evidence and patch"];
@@ -8,6 +9,7 @@ const quickSteps = ["Paste a repository link", "Describe the bug", "Review the e
 export default function HomePage() {
   return (
     <>
+      <RefreshOnBack refreshOnReturn />
       <SiteHeader />
       <main id="main" className="flex-1">
         <section className="hero-glow relative overflow-hidden">

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import type { Investigation } from "@/types/api";
 import { event, ID, investigation, notRun, passed, repo, research, result, twoFileResult } from "./fixtures";
@@ -29,6 +29,7 @@ vi.mock("@/hooks/use-investigation", async (importOriginal) => {
 import { EvidenceTrail } from "@/components/landing/evidence-trail";
 import { RepairForm, validateForm } from "@/components/landing/repair-form";
 import { Faq } from "@/components/landing/sections";
+import { RefreshOnBack, resetRefreshOnBack } from "@/components/refresh-on-back";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { InvestigationView } from "@/components/investigation/investigation-view";
 import { stageStates } from "@/components/investigation/stages";
@@ -638,5 +639,61 @@ describe("Live status while an investigation runs", () => {
     hookMock.useInvestigation.mockReturnValue({ investigation: null, loadState: "loading", error: null, connection: "idle", retry: vi.fn() });
     render(<InvestigationView id={ID} />);
     expect(screen.getByText("Opening your investigation…")).toBeInTheDocument();
+  });
+});
+
+
+describe("Coming back to a page refreshes it", () => {
+  const reload = vi.fn();
+  beforeEach(() => {
+    reload.mockClear();
+    resetRefreshOnBack();
+    Object.defineProperty(window, "location", { value: { ...window.location, reload }, configurable: true, writable: true });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("does not reload on the first visit", () => {
+    render(<RefreshOnBack refreshOnReturn />);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("reloads when the page is shown again after the visitor was somewhere else", () => {
+    vi.useFakeTimers();
+    const first = render(<RefreshOnBack refreshOnReturn />);
+    first.unmount(); // visitor navigates to the results page
+    vi.advanceTimersByTime(5000);
+    render(<RefreshOnBack refreshOnReturn />); // visitor presses Back
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reload for the instant unmount/remount that React does in development", () => {
+    const first = render(<RefreshOnBack refreshOnReturn />);
+    first.unmount();
+    render(<RefreshOnBack refreshOnReturn />);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("reloads only once per return, not in a loop", () => {
+    vi.useFakeTimers();
+    render(<RefreshOnBack refreshOnReturn />).unmount();
+    vi.advanceTimersByTime(5000);
+    render(<RefreshOnBack refreshOnReturn />);
+    expect(reload).toHaveBeenCalledTimes(1);
+    render(<RefreshOnBack refreshOnReturn />);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("a page restored from the browser's back/forward cache is reloaded, a normal load is not", () => {
+    render(<RefreshOnBack />);
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: false }));
+    expect(reload).not.toHaveBeenCalled();
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops listening once the page is left", () => {
+    render(<RefreshOnBack />).unmount();
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    expect(reload).not.toHaveBeenCalled();
   });
 });
