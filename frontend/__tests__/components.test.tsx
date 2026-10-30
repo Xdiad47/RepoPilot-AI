@@ -228,6 +228,7 @@ describe("InvestigationView states", () => {
     });
     render(<InvestigationView id={ID} />);
     expect(screen.getByText("Investigation in progress")).toBeInTheDocument();
+    expect(screen.getByText("Connecting to your repository…")).toBeInTheDocument();
     expect(screen.getByText("Shallow-cloning into an isolated workspace")).toBeInTheDocument();
     expect(screen.getByText("Live")).toBeInTheDocument();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
@@ -236,6 +237,7 @@ describe("InvestigationView states", () => {
   it("shows a queued investigation", () => {
     showing({ investigation: investigation({ status: "queued", result: null, repository: null, events: [event(1, "queued", "info", "Investigation queued (1 ahead of it)")] }) });
     render(<InvestigationView id={ID} />);
+    expect(screen.getByText("Getting ready…")).toBeInTheDocument();
     expect(screen.getByText(/waiting for a free worker/i)).toBeInTheDocument();
   });
 
@@ -399,7 +401,7 @@ describe("Research tab", () => {
     withResearch(result({ research }));
     render(<InvestigationView id={ID} />);
     await userEvent.click(screen.getByRole("tab", { name: /research/i }));
-    expect(screen.getByText("3 sources found with Tavily")).toBeInTheDocument();
+    expect(screen.getByText("3 sources found on the internet")).toBeInTheDocument();
     const items = within(screen.getByRole("list", { name: "Research sources" })).getAllByRole("listitem");
     expect(items[0]).toHaveTextContent("Built-in exceptions");
     expect(items[0]).toHaveTextContent("Official documentation");
@@ -440,7 +442,7 @@ describe("Research tab", () => {
   it("the overview summarises the research and links to it", async () => {
     withResearch(result({ research }));
     render(<InvestigationView id={ID} />);
-    expect(screen.getByText(/3 sources found with Tavily; 1 compared with the code/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 sources found on the internet; 1 compared with the code/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /view sources/i }));
     expect(screen.getByRole("tab", { name: /research/i })).toHaveAttribute("aria-selected", "true");
   });
@@ -569,5 +571,72 @@ describe("ThemeToggle", () => {
     expect(screen.getByRole("button", { name: /switch to dark theme/i })).toBeInTheDocument();
     delete document.documentElement.dataset.theme;
     window.localStorage.removeItem("repopilot-theme");
+  });
+});
+
+
+describe("Live status while an investigation runs", () => {
+  const running = (events: ReturnType<typeof event>[]) =>
+    showing({ connection: "live", investigation: investigation({ status: "running", result: null, repository: null, events }) });
+
+  it("tells the visitor in plain words that the internet is being searched", () => {
+    running([
+      event(1, "queued", "info", "Investigation accepted"),
+      event(2, "clone", "completed", "Cloned commit 01234567; indexed 14 text files (0 skipped)"),
+      event(3, "analyze", "completed", "Go project (Go modules); test framework: go test"),
+      event(4, "plan", "completed", "4 initial hypotheses; will inspect 6 files"),
+      event(5, "research", "started", "Searching the web with Tavily (2 queries)"),
+    ]);
+    render(<InvestigationView id={ID} />);
+    const status = screen.getByRole("status");
+    expect(within(status).getByText("Searching the internet…")).toBeInTheDocument();
+    expect(within(status).getByText(/official documentation and known issues/i)).toBeInTheDocument();
+    expect(within(status).getByText("Investigation in progress")).toBeInTheDocument();
+  });
+
+  it("moves on to debugging once the research is done, and shows what was really found", () => {
+    running([
+      event(1, "queued", "info", "Investigation accepted"),
+      event(2, "retrieve", "completed", "Found 5 candidate files (0 stack-trace frames matched the repo)"),
+      event(3, "research", "completed", "Found 8 sources (6 official documentation)"),
+      event(4, "diagnose", "started", "Reading the relevant files and comparing hypotheses"),
+    ]);
+    render(<InvestigationView id={ID} />);
+    expect(screen.getByText("Debugging: finding the root cause…")).toBeInTheDocument();
+    const found = screen.getByText("Found so far").parentElement!;
+    expect(within(found).getByText("Found 5 candidate files (0 stack-trace frames matched the repo)")).toBeInTheDocument();
+    expect(within(found).getByText("Found 8 sources (6 official documentation)")).toBeInTheDocument();
+  });
+
+  it("marks finished steps as done and the current one as in progress, for screen readers too", () => {
+    running([
+      event(1, "queued", "info", "Investigation accepted"),
+      event(2, "clone", "completed", "Cloned"),
+      event(3, "analyze", "started", "Detecting language, dependencies and test framework"),
+    ]);
+    render(<InvestigationView id={ID} />);
+    const steps = within(screen.getByRole("list", { name: "Steps" }));
+    expect(steps.getByText("Connect to the repository").closest("li")).toHaveTextContent("(done)");
+    expect(steps.getByText("Analyse the project").closest("li")).toHaveTextContent("(in progress)");
+    expect(steps.getByText("Search the internet").closest("li")).not.toHaveTextContent("(done)");
+  });
+
+  it("between two steps it shows the next one that has not run yet", () => {
+    running([event(1, "queued", "info", "accepted"), event(2, "clone", "completed", "Cloned")]);
+    render(<InvestigationView id={ID} />);
+    expect(screen.getByText("Analysing the repository…")).toBeInTheDocument();
+  });
+
+  it("is replaced by the results once they exist", () => {
+    showing({ investigation: investigation() });
+    render(<InvestigationView id={ID} />);
+    expect(screen.queryByText("Investigation in progress")).not.toBeInTheDocument();
+    expect(screen.getByRole("tablist")).toBeInTheDocument();
+  });
+
+  it("the loading screen says what it is doing", () => {
+    hookMock.useInvestigation.mockReturnValue({ investigation: null, loadState: "loading", error: null, connection: "idle", retry: vi.fn() });
+    render(<InvestigationView id={ID} />);
+    expect(screen.getByText("Opening your investigation…")).toBeInTheDocument();
   });
 });

@@ -34,7 +34,7 @@ export function ResearchTab({ research }: { research: ResearchReport | null }) {
 
   return (
     <div className="space-y-4">
-      <Alert tone="info" title={`${research.sources.length} sources found with ${research.provider}`}>
+      <Alert tone="info" title={`${research.sources.length} sources found on the internet`}>
         Web research explains how a framework or API is meant to behave. It is context, never proof: only code quoted from the
         repository counts as evidence. {used > 0 ? `${used} of these ${used === 1 ? "was" : "were"} compared with the code below.` : research.note}
       </Alert>

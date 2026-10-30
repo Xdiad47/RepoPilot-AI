@@ -124,7 +124,7 @@ function ResearchCard({ research, onView }: { research: RepairResult["research"]
         {found ? (
           <>
             <p className="text-muted">
-              {research.sources.length} sources found with {research.provider}
+              {research.sources.length} sources found on the internet
               {used > 0 ? `; ${used} compared with the code.` : "; none were needed for this diagnosis."}
             </p>
             {research.summary ? <p className="text-fg/90">{research.summary}</p> : null}

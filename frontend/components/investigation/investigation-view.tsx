@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronDown, Clock, Radio } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CodeChangesTab, type Decision, type Decisions } from "@/components/investigation/code-changes-tab";
+import { LiveStatus } from "@/components/investigation/live-status";
 import { OverviewTab } from "@/components/investigation/overview-tab";
 import { ProgressTimeline } from "@/components/investigation/progress-timeline";
 import { RepositoryCard } from "@/components/investigation/repository-card";
@@ -12,7 +13,6 @@ import { RootCauseTab } from "@/components/investigation/root-cause-tab";
 import { FailureAlert, LoadErrorState, NotFoundState, WorkspaceSkeleton } from "@/components/investigation/states";
 import { TestResultsTab } from "@/components/investigation/test-results-tab";
 import { ValidationBadge } from "@/components/investigation/validation-badge";
-import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,22 +58,18 @@ function Workspace({ investigation, connection }: { investigation: Investigation
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
-        {/* Once there is a result, put it first on small screens; the log and bug report move below it. */}
-        <aside className={cn("min-w-0 space-y-4 lg:sticky lg:top-20 lg:self-start", result && "max-lg:order-last")}>
+        {/* On small screens the live status or the result comes first; the bug report and the detailed log move below it. */}
+        <aside className={cn("min-w-0 space-y-4 lg:sticky lg:top-20 lg:self-start", (result || active) && "max-lg:order-last")}>
           <BugReport investigation={investigation} />
           <ProgressTimeline investigation={investigation} />
         </aside>
 
         <section className="min-w-0 space-y-4" aria-label="Investigation results">
+          {active && !result ? <LiveStatus investigation={investigation} /> : null}
+
           {repository ? <RepositoryCard repo={repository} /> : null}
 
           {investigation.status === "failed" && error ? <FailureAlert error={error} /> : null}
-
-          {active && !result ? (
-            <Alert tone="info" title={investigation.status === "queued" ? "Waiting for a free worker…" : "Investigation in progress"}>
-              This usually takes 10 to 60 seconds. You can keep this page open: results appear here as each step finishes.
-            </Alert>
-          ) : null}
 
           {result ? <ResultTabs investigation={investigation} /> : null}
         </section>

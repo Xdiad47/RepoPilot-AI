@@ -1,4 +1,4 @@
-import { ArrowLeft, RefreshCw, SearchX } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, SearchX } from "lucide-react";
 import Link from "next/link";
 import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -10,6 +10,9 @@ import type { ErrorInfo } from "@/types/api";
 export function WorkspaceSkeleton() {
   return (
     <div className="mx-auto max-w-7xl space-y-4 px-4 py-8 sm:px-6" aria-busy="true" aria-label="Loading investigation">
+      <p role="status" className="flex items-center gap-2 text-sm text-muted">
+        <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden /> Opening your investigation…
+      </p>
       <Skeleton className="h-8 w-64" />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
         <div className="space-y-4">
