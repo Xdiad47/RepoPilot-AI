@@ -245,3 +245,16 @@ describe("per-file diff sections", () => {
     expect(files[0].raw).toBe(tricky);
   });
 });
+
+describe("one-click examples", () => {
+  it("all point at a valid public repository, with a usable bug report and unique ids", async () => {
+    const { EXAMPLES } = await import("@/lib/examples");
+    expect(EXAMPLES.length).toBeGreaterThanOrEqual(8);
+    expect(new Set(EXAMPLES.map((e) => e.id)).size).toBe(EXAMPLES.length);
+    for (const e of EXAMPLES) {
+      expect(isGithubUrl(e.repository_url)).toBe(true);
+      expect(e.bug_description.length).toBeGreaterThanOrEqual(10);
+    }
+    expect(new Set(EXAMPLES.map((e) => e.repository_url)).size).toBe(2);
+  });
+});

@@ -1,4 +1,4 @@
-import { DEMO_REPO_URL } from "@/lib/config";
+import { DEMO_REPO_URL, POLYGLOT_REPO_URL } from "@/lib/config";
 
 export interface ExampleBug {
   id: string;
@@ -9,7 +9,10 @@ export interface ExampleBug {
   stack_trace?: string;
 }
 
-/** One-click examples that run against the public demo repository (it contains four deliberate bugs). */
+/**
+ * One-click examples. The first four run against the Python demo repository, the last four against a second demo
+ * repository with one deliberate bug in each of four other languages. Each bug report was run end to end.
+ */
 export const EXAMPLES: ExampleBug[] = [
   {
     id: "empty-email",
@@ -44,5 +47,36 @@ export const EXAMPLES: ExampleBug[] = [
     repository_url: DEMO_REPO_URL,
     bug_description:
       "A 10% discount on a 200 dollar cart takes off the entire price and the total shows 0.0 instead of 180.",
+  },
+  {
+    id: "go-discount",
+    title: "Go: discount divides by 10",
+    hint: "Go",
+    repository_url: POLYGLOT_REPO_URL,
+    bug_description:
+      "Applying a 10% discount to a 200 dollar cart takes the whole price off and the total is 0 instead of 180.",
+  },
+  {
+    id: "flutter-pagination",
+    title: "Flutter: page 1 skips items",
+    hint: "Dart",
+    repository_url: POLYGLOT_REPO_URL,
+    bug_description:
+      "On the product list in my Flutter app, page 1 skips the first items and the last page comes back empty. With 25 products and 10 per page I expect pages of 10, 10 and 5.",
+  },
+  {
+    id: "kotlin-rating",
+    title: "Kotlin: empty rating shows NaN",
+    hint: "Kotlin",
+    repository_url: POLYGLOT_REPO_URL,
+    bug_description: "A user profile with no ratings yet shows NaN instead of 0.0 for the average rating.",
+  },
+  {
+    id: "ts-price",
+    title: "TypeScript: no thousands commas",
+    hint: "TypeScript",
+    repository_url: POLYGLOT_REPO_URL,
+    bug_description:
+      "Prices over a thousand are shown without thousands separators: formatPrice(1234.5) returns 1234.50 instead of 1,234.50.",
   },
 ];

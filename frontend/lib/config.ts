@@ -16,3 +16,7 @@ export function getApiBaseUrl(): string | null {
 
 export const DEMO_REPO_URL =
   process.env.NEXT_PUBLIC_DEMO_REPO_URL?.trim() || "https://github.com/Xdiad47/repopilot-demo-bugs";
+
+/** A second public demo repository with one deliberate bug each in Go, Dart/Flutter, Kotlin and TypeScript. */
+export const POLYGLOT_REPO_URL =
+  process.env.NEXT_PUBLIC_POLYGLOT_REPO_URL?.trim() || "https://github.com/Xdiad47/repopilot-demo-polyglot";
