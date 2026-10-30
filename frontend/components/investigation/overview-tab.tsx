@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
+import { DownloadButton } from "@/components/ui/download-button";
+import { buildReport, reportFilename } from "@/lib/report";
 import { verdictFor } from "@/lib/verdict";
-import type { Level, RepairResult } from "@/types/api";
+import type { Investigation, Level, RepairResult } from "@/types/api";
 
 const levelTone: Record<Level, "success" | "warning" | "danger"> = { high: "success", medium: "warning", low: "danger" };
 
-export function OverviewTab({ result, onViewChanges, onViewResearch }: { result: RepairResult; onViewChanges?: () => void; onViewResearch?: () => void }) {
+export function OverviewTab({ investigation, result, onViewChanges, onViewResearch }: { investigation: Investigation; result: RepairResult; onViewChanges?: () => void; onViewResearch?: () => void }) {
   const verdict = verdictFor(result);
   const additions = result.changes.reduce((n, c) => n + c.additions, 0);
   const deletions = result.changes.reduce((n, c) => n + c.deletions, 0);
@@ -21,6 +23,11 @@ export function OverviewTab({ result, onViewChanges, onViewResearch }: { result:
       <Alert tone={verdict.tone} title={verdict.headline}>
         {verdict.detail}
       </Alert>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-faint">Share or keep this investigation: the report includes the evidence, sources, patch and what was tested.</p>
+        <DownloadButton text={buildReport(investigation)} filename={reportFilename(investigation)} mime="text/markdown" label="Download report (.md)" variant="outline" />
+      </div>
 
       {result.changes.length > 0 ? <NextSteps tested={result.validation.status === "passed"} onViewChanges={onViewChanges} /> : null}
 

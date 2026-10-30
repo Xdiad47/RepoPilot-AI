@@ -4,10 +4,11 @@ import { ArrowLeft, ChevronDown, Clock, Radio } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { RefreshOnBack } from "@/components/refresh-on-back";
-import { CodeChangesTab, type Decision, type Decisions } from "@/components/investigation/code-changes-tab";
+import { CodeChangesTab, type Decision, type Decisions, type SkippedParts } from "@/components/investigation/code-changes-tab";
 import { LiveStatus } from "@/components/investigation/live-status";
 import { OverviewTab } from "@/components/investigation/overview-tab";
 import { ProgressTimeline } from "@/components/investigation/progress-timeline";
+import { ProjectTab } from "@/components/investigation/project-tab";
 import { RepositoryCard } from "@/components/investigation/repository-card";
 import { ResearchTab } from "@/components/investigation/research-tab";
 import { RootCauseTab } from "@/components/investigation/root-cause-tab";
@@ -95,8 +96,16 @@ function ResultTabs({ investigation }: { investigation: Investigation }) {
       else delete next[path];
       return next;
     });
+  const [skipped, setSkipped] = useState<SkippedParts>({});
+  const toggleHunk = (path: string, index: number) =>
+    setSkipped((prev) => {
+      const current = prev[path] ?? [];
+      const next = current.includes(index) ? current.filter((i) => i !== index) : [...current, index];
+      return { ...prev, [path]: next };
+    });
   const decideAll = (decision: Decision) => setDecisions(Object.fromEntries(result.changes.map((c) => [c.path, decision])));
   const sources = result.research?.status === "completed" ? result.research.sources.length : 0;
+  const healthWarnings = (investigation.repository?.quality ?? []).filter((q) => q.severity === "warning").length;
   return (
     <Tabs value={tab} onValueChange={setTab}>
       <TabsList aria-label="Investigation results">
@@ -105,6 +114,10 @@ function ResultTabs({ investigation }: { investigation: Investigation }) {
         <TabsTrigger value="research">
           Research
           {sources > 0 ? <Badge className="px-1.5 py-0">{sources}</Badge> : null}
+        </TabsTrigger>
+        <TabsTrigger value="project">
+          Project
+          {healthWarnings > 0 ? <Badge tone="warning" className="px-1.5 py-0">{healthWarnings}</Badge> : null}
         </TabsTrigger>
         <TabsTrigger value="changes">
           Code Changes
@@ -116,7 +129,7 @@ function ResultTabs({ investigation }: { investigation: Investigation }) {
         </TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
-        <OverviewTab result={result} onViewChanges={() => setTab("changes")} onViewResearch={() => setTab("research")} />
+        <OverviewTab investigation={investigation} result={result} onViewChanges={() => setTab("changes")} onViewResearch={() => setTab("research")} />
       </TabsContent>
       <TabsContent value="root-cause">
         <RootCauseTab result={result} />
@@ -124,8 +137,11 @@ function ResultTabs({ investigation }: { investigation: Investigation }) {
       <TabsContent value="research">
         <ResearchTab research={result.research} />
       </TabsContent>
+      <TabsContent value="project">
+        <ProjectTab repository={investigation.repository} />
+      </TabsContent>
       <TabsContent value="changes">
-        <CodeChangesTab result={result} decisions={decisions} onDecide={decide} onDecideAll={decideAll} />
+        <CodeChangesTab result={result} decisions={decisions} onDecide={decide} onDecideAll={decideAll} skipped={skipped} onToggleHunk={toggleHunk} />
       </TabsContent>
       <TabsContent value="tests">
         <TestResultsTab validation={result.validation} />

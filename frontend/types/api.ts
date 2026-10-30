@@ -29,6 +29,21 @@ export interface RepairAccepted {
   events_url: string;
 }
 
+export interface FolderSummary {
+  path: string;
+  files: number;
+  languages: string[];
+  role: "source" | "tests" | "docs" | "ci" | "tooling" | "config" | "assets" | "other";
+}
+
+export interface QualityIssue {
+  severity: "warning" | "info";
+  title: string;
+  detail: string;
+  path: string | null;
+  line: number | null;
+}
+
 export interface RepositoryInfo {
   url: string;
   owner: string;
@@ -47,6 +62,9 @@ export interface RepositoryInfo {
   dependencies: string[];
   test_commands: string[];
   validation_supported: boolean;
+  structure: FolderSummary[];
+  entry_points: string[];
+  quality: QualityIssue[];
   tree_summary: string;
   supported: boolean;
   support_note: string;

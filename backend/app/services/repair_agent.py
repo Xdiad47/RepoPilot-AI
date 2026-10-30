@@ -35,6 +35,7 @@ from app.schemas.models import (
 from app.services import validation_service as vs
 from app.services.llm_service import LLMService
 from app.services.patch_service import PatchBuild, PatchService
+from app.services.project_insights import assess_quality, summarize_structure
 from app.services.repository_analyzer import RankedFile, RepoProfile, RepositoryAnalyzer
 from app.services.repository_service import (
     RepoIndex,
@@ -161,6 +162,8 @@ class RepairAgent:
         # ---- 2. analyze -------------------------------------------------------------------------------
         progress.emit("analyze", "started", "Detecting language, dependencies and test framework")
         profile = await asyncio.to_thread(self._analyzer.profile, index)
+        structure, entry_points = await asyncio.to_thread(summarize_structure, index)
+        quality = await asyncio.to_thread(assess_quality, index)
         info = RepositoryInfo(
             url=request.repository_url, owner=owner, name=meta.name, description=meta.description,
             default_branch=meta.default_branch, commit_sha=sha, stars=meta.stars, size_kb=meta.size_kb,
@@ -169,17 +172,24 @@ class RepairAgent:
             tree_summary=profile.tree_summary, supported=profile.supported, support_note=profile.support_note,
             frameworks=profile.frameworks, dependencies=profile.dependencies, test_commands=profile.test_commands,
             validation_supported=profile.validation_language is not None,
+            structure=structure, entry_points=entry_points, quality=quality,
         )
         progress.set_repository(info)
         if not profile.supported:
             raise UnsupportedRepository(profile.support_note)
         progress.emit(
             "analyze", "completed",
-            f"{profile.primary_language} project"
+            self._project_label(profile)
             + (f" ({', '.join(profile.frameworks[:4])})" if profile.frameworks else "")
             + f"; test framework: {', '.join(profile.test_frameworks) or 'none detected'}",
             {"language": profile.primary_language, "frameworks": ", ".join(profile.frameworks),
              "test_frameworks": ", ".join(profile.test_frameworks)},
+        )
+        progress.emit(
+            "analyze", "info",
+            f"Mapped {len(structure)} folders and {len(entry_points)} entry points; "
+            f"{sum(1 for q in quality if q.severity == 'warning')} code-health warnings, "
+            f"{sum(1 for q in quality if q.severity == 'info')} notes",
         )
 
         # ---- 3. targeted search -----------------------------------------------------------------------
@@ -663,6 +673,14 @@ class RepairAgent:
 
     # ======================================================================================================
     # small utilities
+    @staticmethod
+    def _project_label(profile: RepoProfile) -> str:
+        """\"Python project\", or \"Multi-language project\" when the top languages are tied (a repository of several projects)."""
+        counts = sorted(profile.languages.values(), reverse=True)
+        if len(counts) > 1 and counts[0] == counts[1]:
+            return f"Multi-language project ({', '.join(list(profile.languages)[:4])})"
+        return f"{profile.primary_language} project"
+
     @staticmethod
     def _commands_near(commands: list[str], paths: list[str]) -> list[str]:
         """In a repository with several projects, put the test command of the project that was changed first."""

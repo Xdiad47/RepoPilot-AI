@@ -18,6 +18,8 @@ retries. It is not a swarm of autonomous agents, and the model has no tools.
 
 ![A completed investigation](docs/screenshots/result.png)
 
+![Web research with sources found on the internet](docs/screenshots/research.png)
+
 > The public demo runs with test validation **off** (the server is shared), so patches there are shown as
 > *proposals — not tested*. With a sandbox enabled, the same pipeline runs the tests before and after the patch.
 
@@ -45,12 +47,13 @@ flowchart LR
 | Stage | What really happens |
 | --- | --- |
 | **Clone** | GitHub metadata check, hardened shallow clone into a private per-investigation workspace (no hooks, no submodules, no symlinks). |
-| **Analyze** | Languages (by file extension), frameworks and dependencies (from manifests and imports), test frameworks and test commands, stack-trace frame → file mapping for many ecosystems, keyword search, symbol ranking. |
+| **Analyze** | Languages (by file extension), frameworks and dependencies (from manifests and imports), test frameworks and test commands, a folder map with entry points, quick code-health checks (hard-coded secrets, risky calls, huge files, missing tests; heuristics, not an audit), stack-trace frame → file mapping for many ecosystems, keyword search, symbol ranking. |
 | **Plan** | LLM proposes hypotheses, files to read and web search queries. Only paths that exist are accepted. |
 | **Research** | [Tavily](https://tavily.com) searches (plus one search limited to the stack's official documentation sites). Results are de-duplicated, classified (official / community / other), ranked official-first and shown with their links. Only a short query leaves the server, with key-like strings masked; repository code is never sent. If Tavily is missing or fails, the run continues and says so. |
 | **Diagnose** | LLM compares hypotheses and must quote real code, and compares each web source it uses with that code. Quotes are located in the file; unverifiable evidence lowers confidence or stops the run. Web sources are context only, never evidence. |
 | **Patch** | LLM returns exact `search → replace` edits (not a hand-written diff). The backend builds the unified diff itself, then dry-run applies it with zero fuzz. Protected files (secrets, CI, lockfiles, test config, existing tests) are rejected. |
-| **Review** (in the UI) | Accept or reject each changed file, then copy or download only the accepted files as one patch. Nothing is ever pushed or applied for you. |
+| **Review** (in the UI) | Accept or reject each changed file, and leave out individual parts of a file; then copy or download only what you kept as one patch (rebuilt so it still applies with `git apply`). Nothing is ever pushed or applied for you. |
+| **Report** | The Overview tab downloads a Markdown report: root cause, verified evidence, research sources, patch, what was and was not tested, risks and limitations. |
 | **Validate** | Python only: baseline run, patch applied to a disposable copy, patched run, compared. Failures feed back into a bounded retry loop. For other languages the detected test command is shown and reported as *not run*. |
 
 ### Validation statuses

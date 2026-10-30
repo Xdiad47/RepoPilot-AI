@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import type { Investigation } from "@/types/api";
-import { event, ID, investigation, notRun, passed, repo, research, result, twoFileResult } from "./fixtures";
+import { buildReport } from "@/lib/report";
+import { event, ID, investigation, multiHunkResult, notRun, passed, repo, research, result, twoFileResult } from "./fixtures";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -559,6 +560,8 @@ describe("landing page content", () => {
     render(<EvidenceTrail />);
     expect(screen.getByText(/quote found in the file/i)).toBeInTheDocument();
     expect(screen.getByText(/test validation is switched off/i)).toBeInTheDocument();
+    expect(screen.getByText(/8 sources found on the internet/i)).toBeInTheDocument();
+    expect(screen.getByText(/never count as evidence/i)).toBeInTheDocument();
   });
 });
 
@@ -695,5 +698,124 @@ describe("Coming back to a page refreshes it", () => {
     render(<RefreshOnBack />).unmount();
     window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("Leaving individual parts of a file out of the patch", () => {
+  const reviewSummary = () => screen.getByText(/to review/i).textContent ?? "";
+  async function open() {
+    showing({ investigation: investigation({ result: multiHunkResult() }) });
+    render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /code changes/i }));
+  }
+
+  it("offers per-part control only after the file is accepted, and only for files with several parts", async () => {
+    await open();
+    expect(screen.queryByRole("button", { name: /leave out part 1 of 2/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(screen.getByText(/has 2 separate parts/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /leave out part 2 of 2/i })).toBeInTheDocument();
+  });
+
+  it("copies only the parts that were kept, with a valid header", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await open();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await userEvent.click(screen.getByRole("button", { name: /leave out part 2 of 2/i }));
+    expect(reviewSummary()).toContain("1 part left out");
+    expect(screen.getByText("left out of the patch")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /copy accepted diff/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const copied = writeText.mock.calls.at(-1)![0] as string;
+    expect(copied).toContain("@@ -2,3 +2,3 @@ def register(payload):");
+    expect(copied).not.toContain("def other()");
+    expect(copied).not.toContain("return x + 1");
+  });
+
+  it("including the part again restores it, and leaving out every part disables the download", async () => {
+    await open();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await userEvent.click(screen.getByRole("button", { name: /leave out part 1 of 2/i }));
+    await userEvent.click(screen.getByRole("button", { name: /leave out part 2 of 2/i }));
+    expect(screen.getByRole("button", { name: /download accepted/i })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: /include part 1 of 2/i }));
+    expect(screen.getByRole("button", { name: /download accepted/i })).toBeEnabled();
+    expect(reviewSummary()).toContain("1 part left out");
+  });
+
+  it("forgets skipped parts of a file that is rejected", async () => {
+    await open();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await userEvent.click(screen.getByRole("button", { name: /leave out part 2 of 2/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(reviewSummary()).not.toContain("left out");
+  });
+});
+
+describe("Project tab", () => {
+  it("shows the structure map, entry points and code health, and explains it is not an audit", async () => {
+    showing({ investigation: investigation() });
+    render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /^project/i }));
+    const folders = within(screen.getByRole("list", { name: "Folders" }));
+    expect(folders.getByText("(top level)")).toBeInTheDocument();
+    expect(folders.getByText("app/")).toBeInTheDocument();
+    expect(folders.getByText("Tests")).toBeInTheDocument();
+    expect(screen.getByText("app/main.py")).toBeInTheDocument();
+    expect(screen.getByText("Quick checks, not a full audit")).toBeInTheDocument();
+    const issues = within(screen.getByRole("list", { name: "Code health observations" }));
+    expect(issues.getByText("Bare except")).toBeInTheDocument();
+    expect(issues.getByText("Warning")).toBeInTheDocument();
+    expect(issues.getByText("Note")).toBeInTheDocument();
+    expect(issues.getByText("app/api.py")).toBeInTheDocument();
+  });
+
+  it("badges the tab with the number of warnings", () => {
+    showing({ investigation: investigation() });
+    render(<InvestigationView id={ID} />);
+    expect(screen.getByRole("tab", { name: /^project/i })).toHaveTextContent("1");
+  });
+
+  it("says so when an older investigation has no structure data", async () => {
+    showing({ investigation: investigation({ repository: { ...repo, structure: [], entry_points: [], quality: [] } }) });
+    render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /^project/i }));
+    expect(screen.getByText(/no structure information/i)).toBeInTheDocument();
+    expect(screen.getByText(/no issues were found/i)).toBeInTheDocument();
+  });
+});
+
+describe("Report download", () => {
+  it("the overview offers a Markdown report", () => {
+    showing({ investigation: investigation() });
+    render(<InvestigationView id={ID} />);
+    expect(screen.getByRole("button", { name: /download report/i })).toBeEnabled();
+  });
+
+  it("the report states what was verified and what was not, like the screen does", () => {
+    const text = buildReport(investigation({ result: result({ research }) }));
+    expect(text).toContain("# RepoPilot AI report: octocat/hello");
+    expect(text).toContain("Patch proposed — not tested");
+    expect(text).toContain("1 of 2 quotes verified");
+    expect(text).toContain("(NOT verified: this code was not found in the file)");
+    expect(text).toContain("3 sources found on the internet");
+    expect(text).toContain("[Built-in exceptions](https://docs.python.org/3/library/exceptions.html) (official documentation, docs.python.org) — compared with the code:");
+    expect(text).toContain("git apply repopilot.patch");
+    expect(text).toContain("**not run**");
+    expect(text).toContain("generated by an AI system");
+    expect(text).toContain("Bare except");
+  });
+
+  it("never lets code inside the report close its own fence, and handles missing research", () => {
+    const evil = result({ research: null, diff: "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+```\n" });
+    const text = buildReport(investigation({ result: evil }));
+    expect(text).toContain("````diff");
+    expect(text).toContain("Not used for this investigation");
+  });
+
+  it("is empty when there is no result yet", () => {
+    expect(buildReport(investigation({ result: null }))).toBe("");
   });
 });

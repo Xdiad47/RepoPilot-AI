@@ -66,6 +66,21 @@ class RepairRequest(BaseModel):
 
 # --- Repository ---------------------------------------------------------------------------------------
 
+class FolderSummary(BaseModel):
+    path: str
+    files: int
+    languages: list[str] = Field(default_factory=list)
+    role: Literal["source", "tests", "docs", "ci", "tooling", "config", "assets", "other"] = "other"
+
+
+class QualityIssue(BaseModel):
+    severity: Literal["warning", "info"]
+    title: str
+    detail: str
+    path: str | None = None
+    line: int | None = None
+
+
 class RepositoryInfo(BaseModel):
     url: str
     owner: str
@@ -84,6 +99,9 @@ class RepositoryInfo(BaseModel):
     dependencies: list[str] = Field(default_factory=list, description="Notable declared dependencies")
     test_commands: list[str] = Field(default_factory=list, description="Test commands inferred from configuration (informational)")
     validation_supported: bool = Field(default=False, description="True when RepoPilot can execute this repository's tests")
+    structure: list[FolderSummary] = Field(default_factory=list, description="Top-level folders: what they hold and how big they are")
+    entry_points: list[str] = Field(default_factory=list, description="Files where the program most likely starts")
+    quality: list[QualityIssue] = Field(default_factory=list, description="Heuristic code-health observations, not a full audit")
     tree_summary: str = ""
     supported: bool = False
     support_note: str = ""

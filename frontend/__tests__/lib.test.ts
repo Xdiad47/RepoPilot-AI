@@ -1,7 +1,11 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError, api, describeError } from "@/lib/api";
 import { resolveApiBaseUrl } from "@/lib/config";
-import { diffForPaths, parseUnifiedDiff } from "@/lib/diff";
+import { diffForPaths, effectiveFiles, parseUnifiedDiff, patchForSelection } from "@/lib/diff";
 import { clearRecent, loadRecent, saveRecent } from "@/lib/storage";
 import { formatDuration, formatKb, isGithubUrl, normalizeRepoInput, truncate } from "@/lib/utils";
 import { verdictFor } from "@/lib/verdict";
@@ -256,5 +260,84 @@ describe("one-click examples", () => {
       expect(e.bug_description.length).toBeGreaterThanOrEqual(10);
     }
     expect(new Set(EXAMPLES.map((e) => e.repository_url)).size).toBe(2);
+  });
+});
+
+describe("leaving parts out of a patch (verified with the real `diff` and `git apply`)", () => {
+  /** Real unified diff of old -> new for a file called f.txt, with the headers the backend uses. */
+  function diffOf(oldText: string, newText: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rp-diff-"));
+    fs.writeFileSync(path.join(dir, "old"), oldText);
+    fs.writeFileSync(path.join(dir, "new"), newText);
+    let out = "";
+    try {
+      execFileSync("diff", ["-U1", "old", "new"], { cwd: dir });
+    } catch (e) {
+      out = String((e as { stdout: Buffer }).stdout);
+    }
+    return out.replace(/^--- .*$/m, "--- a/f.txt").replace(/^\+\+\+ .*$/m, "+++ b/f.txt");
+  }
+
+  function applyTo(original: string, patch: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rp-apply-"));
+    fs.writeFileSync(path.join(dir, "f.txt"), original);
+    fs.writeFileSync(path.join(dir, "p.patch"), patch);
+    execFileSync("git", ["apply", "--whitespace=nowarn", "p.patch"], { cwd: dir });
+    return fs.readFileSync(path.join(dir, "f.txt"), "utf8");
+  }
+
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`);
+  const join = (l: string[]) => l.join("\n") + "\n";
+
+  function scenario(edit: (l: string[]) => string[], skip: number[]) {
+    const original = join(lines(30));
+    const changed = join(edit(lines(30)));
+    const parsed = parseUnifiedDiff(diffOf(original, changed));
+    const patch = patchForSelection(parsed, new Set(["f.txt"]), { "f.txt": skip });
+    return { original, changed, parsed, patch };
+  }
+
+  it("keeping every part reproduces the original diff byte for byte", () => {
+    const { parsed, patch } = scenario((l) => { l[2] = "A"; l[14] = "B"; l[26] = "C"; return l; }, []);
+    expect(parsed[0].hunks).toHaveLength(3);
+    expect(patch).toBe(parsed[0].raw);
+  });
+
+  it("leaving out the middle change still applies, and only that change is missing", () => {
+    const { original, patch } = scenario((l) => { l[2] = "A"; l[14] = "B"; l[26] = "C"; return l; }, [1]);
+    const result = applyTo(original, patch).split("\n");
+    expect(result[2]).toBe("A");
+    expect(result[14]).toBe("line 15");
+    expect(result[26]).toBe("C");
+  });
+
+  it("leaving out an early change that adds lines shifts the later parts correctly", () => {
+    const edit = (l: string[]) => { l.splice(2, 0, "new 1", "new 2", "new 3"); l[20] = "changed late"; return l; };
+    const { original, patch } = scenario(edit, [0]);
+    const result = applyTo(original, patch).split("\n");
+    expect(result[2]).toBe("line 3");
+    expect(result).toContain("changed late");
+    expect(result).not.toContain("new 1");
+    expect(result.length).toBe(original.split("\n").length);
+  });
+
+  it("handles pure insertions and pure deletions as separate parts", () => {
+    const edit = (l: string[]) => { l.splice(4, 1); l.splice(18, 0, "inserted"); l[27] = "edited"; return l; };
+    for (const skip of [[0], [1], [2], [0, 2], [1, 2]]) {
+      const { original, parsed, patch } = scenario(edit, skip);
+      expect(parsed[0].hunks.length).toBe(3);
+      const result = applyTo(original, patch).split("\n");
+      expect(result.includes("inserted")).toBe(!skip.includes(1));
+      expect(result.includes("line 5")).toBe(skip.includes(0));
+      expect(result.includes("edited")).toBe(!skip.includes(2));
+    }
+  });
+
+  it("a file whose every part is left out contributes nothing", () => {
+    const { parsed } = scenario((l) => { l[2] = "A"; l[20] = "B"; return l; }, []);
+    expect(patchForSelection(parsed, new Set(["f.txt"]), { "f.txt": [0, 1] })).toBe("");
+    expect(effectiveFiles(parsed, new Set(["f.txt"]), { "f.txt": [0, 1] })).toHaveLength(0);
+    expect(effectiveFiles(parsed, new Set(["f.txt"]), { "f.txt": [0] })).toHaveLength(1);
+    expect(effectiveFiles(parsed, new Set(), {})).toHaveLength(0);
   });
 });

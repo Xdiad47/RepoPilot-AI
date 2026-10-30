@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Download, FilePlus2, FlaskConical, GitCompare, X } from "lucide-react";
+import { Check, FilePlus2, FlaskConical, GitCompare, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { DiffViewer } from "@/components/investigation/diff-viewer";
 import { Alert } from "@/components/ui/alert";
@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { CodeBlock } from "@/components/ui/code-block";
 import { CopyButton } from "@/components/ui/copy-button";
-import { diffForPaths, parseUnifiedDiff, type DiffFile } from "@/lib/diff";
+import { DownloadButton } from "@/components/ui/download-button";
+import { effectiveFiles, parseUnifiedDiff, patchForSelection, type DiffFile } from "@/lib/diff";
 import { cn } from "@/lib/utils";
 import type { FileChange, RepairResult } from "@/types/api";
 
@@ -17,16 +18,23 @@ type View = "diff" | "original" | "patched";
 export type Decision = "accepted" | "rejected";
 export type Decisions = Record<string, Decision>;
 
+export type SkippedParts = Record<string, number[]>;
+
 interface ReviewProps {
   decisions: Decisions;
   onDecide: (path: string, decision: Decision | null) => void;
   onDecideAll: (decision: Decision) => void;
+  /** Blocks inside a file that the visitor chose to leave out of the patch, by file path. */
+  skipped: SkippedParts;
+  onToggleHunk: (path: string, index: number) => void;
 }
 
-export function CodeChangesTab({ result, decisions, onDecide, onDecideAll }: { result: RepairResult } & ReviewProps) {
+export function CodeChangesTab({ result, decisions, onDecide, onDecideAll, skipped, onToggleHunk }: { result: RepairResult } & ReviewProps) {
   const files = useMemo(() => parseUnifiedDiff(result.diff), [result.diff]);
   const accepted = useMemo(() => new Set(result.changes.filter((c) => decisions[c.path] === "accepted").map((c) => c.path)), [result.changes, decisions]);
-  const acceptedDiff = useMemo(() => diffForPaths(files, accepted), [files, accepted]);
+  const acceptedDiff = useMemo(() => patchForSelection(files, accepted, skipped), [files, accepted, skipped]);
+  const included = useMemo(() => effectiveFiles(files, accepted, skipped).length, [files, accepted, skipped]);
+  const skippedParts = Object.entries(skipped).reduce((n, [path, list]) => n + (accepted.has(path) ? list.length : 0), 0);
   const rejected = result.changes.filter((c) => decisions[c.path] === "rejected").length;
   const pending = result.changes.length - accepted.size - rejected;
 
@@ -52,6 +60,7 @@ export function CodeChangesTab({ result, decisions, onDecide, onDecideAll }: { r
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm" aria-live="polite">
               <strong>{accepted.size}</strong> accepted · <strong>{rejected}</strong> rejected · <strong>{pending}</strong> to review
+              {skippedParts > 0 ? <> · <strong>{skippedParts}</strong> {skippedParts === 1 ? "part" : "parts"} left out</> : null}
             </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => onDecideAll("accepted")}>
@@ -63,9 +72,9 @@ export function CodeChangesTab({ result, decisions, onDecide, onDecideAll }: { r
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <DownloadButton text={acceptedDiff} filename="repopilot.patch" disabled={accepted.size === 0} />
-            <CopyButton text={acceptedDiff} label="Copy accepted diff" className="border border-border" disabled={accepted.size === 0} />
-            {accepted.size === 0 ? <span className="text-xs text-faint">Accept at least one file to download a patch.</span> : null}
+            <DownloadButton text={acceptedDiff} filename="repopilot.patch" mime="text/x-diff" label="Download accepted .patch" disabled={included === 0} />
+            <CopyButton text={acceptedDiff} label="Copy accepted diff" className="border border-border" disabled={included === 0} />
+            {included === 0 ? <span className="text-xs text-faint">Accept at least one file to download a patch.</span> : null}
           </div>
         </CardBody>
       </Card>
@@ -77,6 +86,8 @@ export function CodeChangesTab({ result, decisions, onDecide, onDecideAll }: { r
           diff={files.find((f) => f.path === change.path)}
           decision={decisions[change.path] ?? null}
           onDecide={(d) => onDecide(change.path, d)}
+          skipped={skipped[change.path] ?? []}
+          onToggleHunk={(index) => onToggleHunk(change.path, index)}
         />
       ))}
 
@@ -107,38 +118,20 @@ export function CodeChangesTab({ result, decisions, onDecide, onDecideAll }: { r
   );
 }
 
-function DownloadButton({ text, filename, disabled }: { text: string; filename: string; disabled?: boolean }) {
-  return (
-    <Button
-      variant="primary"
-      size="sm"
-      disabled={disabled}
-      onClick={() => {
-        const url = URL.createObjectURL(new Blob([text], { type: "text/x-diff;charset=utf-8" }));
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }}
-    >
-      <Download className="h-3.5 w-3.5" aria-hidden /> Download accepted .patch
-    </Button>
-  );
-}
-
 function FileChangeCard({
   change,
   diff,
   decision,
   onDecide,
+  skipped,
+  onToggleHunk,
 }: {
   change: FileChange;
   diff?: DiffFile;
   decision: Decision | null;
   onDecide: (decision: Decision | null) => void;
+  skipped: number[];
+  onToggleHunk: (index: number) => void;
 }) {
   const [view, setView] = useState<View>("diff");
   const views: { id: View; label: string; available: boolean }[] = [
@@ -204,7 +197,19 @@ function FileChangeCard({
           {view === "original" && change.original_content ? <CopyButton text={change.original_content} label="Copy original" /> : null}
         </div>
 
-        {view === "diff" && diff ? <DiffViewer file={diff} /> : null}
+        {view === "diff" && diff ? (
+          <>
+            {decision === "accepted" && diff.hunks.length > 1 ? (
+              <p className="text-xs text-muted">
+                This file has {diff.hunks.length} separate parts. Use “Leave this part out” on any part you don&apos;t want in the patch.
+              </p>
+            ) : null}
+            <DiffViewer
+              file={diff}
+              review={decision === "accepted" && diff.hunks.length > 1 ? { skipped: new Set(skipped), onToggle: onToggleHunk } : undefined}
+            />
+          </>
+        ) : null}
         {view === "original" && change.original_content != null ? (
           <CodeBlock code={change.original_content} highlight={diff?.removedOldLines} tone="del" label={`Original ${change.path}`} />
         ) : null}

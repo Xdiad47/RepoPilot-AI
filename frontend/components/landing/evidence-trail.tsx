@@ -1,9 +1,10 @@
-import { ArrowRight, BadgeCheck, Bug, FileCode2, GitCompareArrows } from "lucide-react";
+import { ArrowRight, BadgeCheck, Bug, FileCode2, GitCompareArrows, Globe } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 
 /**
- * A static illustration of one real result: the "10% discount" bug in the public demo repository.
+ * A static illustration of one real result: the "10% discount" bug in the public demo repository, including the web
+ * research that run found (source count and the one comparison are copied from that run).
  * Nothing here is generated at runtime, and the caption says so.
  */
 export function EvidenceTrail() {
@@ -65,6 +66,26 @@ export function EvidenceTrail() {
             <Badge>1 file +1 −1</Badge>
           </div>
         </Step>
+      </div>
+
+      <div className="mx-auto mt-4 max-w-3xl rounded-2xl border border-border bg-surface p-5 shadow-sm">
+        <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-accent/15 text-accent">
+            <Globe className="h-4 w-4" aria-hidden />
+          </span>
+          It also checks the internet
+        </h3>
+        <p className="mt-3 text-sm leading-6 text-muted">
+          8 sources found on the internet, 4 of them official Python documentation. One was compared with the code:
+        </p>
+        <p className="mt-2 rounded-lg border border-accent/25 bg-accent/5 px-3 py-2 text-sm leading-6">
+          <span className="font-mono text-xs text-faint">stackoverflow.com</span>
+          <span className="mx-1.5 text-faint" aria-hidden>·</span>
+          supports the correct formula for percentage discounts and highlights that using the wrong divisor leads to incorrect totals.
+        </p>
+        <p className="mt-2 text-xs leading-5 text-faint">
+          Web pages explain how things should work. They never count as evidence: only the quoted line above does.
+        </p>
       </div>
 
       <p className="mx-auto mt-5 max-w-2xl text-center text-xs leading-5 text-faint">

@@ -452,3 +452,17 @@ class TestMonorepoCommands:
     def test_unrelated_paths_keep_the_original_order(self):
         commands = ["npm test", "cd api && go test ./..."]
         assert RepairAgent._commands_near(commands, ["src/x.ts"]) == commands
+
+
+class TestProjectLabel:
+    def test_single_main_language(self):
+        from app.services.repository_analyzer import RepoProfile
+
+        p = RepoProfile("Go", {"Go": 5, "Shell": 1}, [], [], "", True, "", None, True)
+        assert RepairAgent._project_label(p) == "Go project"
+
+    def test_tied_languages_are_not_presented_as_one(self):
+        from app.services.repository_analyzer import RepoProfile
+
+        p = RepoProfile("Kotlin", {"Kotlin": 2, "Dart": 2, "Go": 2}, [], [], "", True, "", None, True)
+        assert RepairAgent._project_label(p) == "Multi-language project (Kotlin, Dart, Go)"

@@ -20,6 +20,16 @@ export const repo: RepositoryInfo = {
   dependencies: ["fastapi", "pydantic"],
   test_commands: ["pytest"],
   validation_supported: true,
+  structure: [
+    { path: "(root)", files: 2, languages: [], role: "other" },
+    { path: "app", files: 3, languages: ["Python"], role: "source" },
+    { path: "tests", files: 2, languages: ["Python"], role: "tests" },
+  ],
+  entry_points: ["app/main.py"],
+  quality: [
+    { severity: "warning", title: "Bare except", detail: "`except:` hides real errors.", path: "app/api.py", line: 9 },
+    { severity: "info", title: "No README", detail: "The repository root has no README.", path: null, line: null },
+  ],
   tree_summary: "",
   supported: true,
   support_note: "Python is fully supported.",
@@ -169,3 +179,22 @@ export const research: ResearchReport = {
     { id: "R3", title: "Sneaky link", url: "javascript:alert(1)", domain: "evil.test", snippet: "", kind: "other", query: "q", score: null, used: false, relevance: "" },
   ],
 };
+
+export const MULTI_HUNK_DIFF = `--- a/app/api.py
++++ b/app/api.py
+@@ -2,3 +2,3 @@ def register(payload):
+     email = payload["email"]
+-    domain = email.split("@")[1]
++    domain = email.split("@")[1] if "@" in email else ""
+     return {"domain": domain}
+@@ -20,3 +20,3 @@ def other():
+     x = 1
+-    return x
++    return x + 1
+     y = 2
+`;
+
+export function multiHunkResult(): RepairResult {
+  const base = result();
+  return result({ diff: MULTI_HUNK_DIFF, changes: [{ ...base.changes[0], additions: 2, deletions: 2 }] });
+}

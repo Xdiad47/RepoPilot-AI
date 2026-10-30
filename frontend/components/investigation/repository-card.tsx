@@ -6,6 +6,8 @@ import type { RepositoryInfo } from "@/types/api";
 
 export function RepositoryCard({ repo }: { repo: RepositoryInfo }) {
   const languages = Object.entries(repo.languages ?? {}).slice(0, 6);
+  // When the top two languages have the same number of files, naming one of them as "the" language would mislead.
+  const tied = languages.length > 1 && languages[0][1] === languages[1][1];
   return (
     <Card>
       <CardBody className="space-y-3">
@@ -22,7 +24,7 @@ export function RepositoryCard({ repo }: { repo: RepositoryInfo }) {
             {repo.description ? <p className="mt-1 text-sm text-muted">{repo.description}</p> : null}
           </div>
           <div className="flex flex-wrap gap-2">
-            {repo.primary_language ? <Badge tone="accent">{repo.primary_language}</Badge> : null}
+            {repo.primary_language ? <Badge tone="accent">{tied ? "Multi-language" : repo.primary_language}</Badge> : null}
             {!repo.supported ? <Badge tone="danger">Unsupported</Badge> : null}
           </div>
         </div>
