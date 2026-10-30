@@ -31,6 +31,7 @@ async def health(request: Request) -> dict:
             "model": s.llm_model if s.llm_configured else None,
             "provider_host": _host(s.llm_base_url) if s.llm_configured else None,
         },
+        "research": {"configured": s.research_configured, "provider": "Tavily" if s.research_configured else None},
         "sandbox": {"enabled": sandbox.enabled, "available": sandbox.available, "detail": sandbox.reason},
         "github_token_configured": bool(s.github_token),
         "limits": {

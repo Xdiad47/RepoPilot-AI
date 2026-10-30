@@ -68,7 +68,7 @@ def create_app(
     settings: Settings | None = None, container_factory: Callable[[Settings], Container] = build_container
 ) -> FastAPI:
     settings = settings or get_settings()
-    configure_logging([settings.llm_api_key, settings.github_token])
+    configure_logging([settings.llm_api_key, settings.github_token, settings.tavily_api_key])
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

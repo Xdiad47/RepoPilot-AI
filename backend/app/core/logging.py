@@ -9,8 +9,16 @@ _PATTERNS = [
     re.compile(r"gsk_[A-Za-z0-9]{20,}"),
     re.compile(r"sk-[A-Za-z0-9_\-]{20,}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"tvly-[A-Za-z0-9_\-]{16,}"),
     re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]{16,}"),
 ]
+
+
+def redact(text: str) -> str:
+    """Mask anything that looks like an API key or token (used before text leaves the server, e.g. in a search query)."""
+    for pattern in _PATTERNS:
+        text = pattern.sub(lambda m: (m.group(1) if m.lastindex else "") + "[REDACTED]", text)
+    return text
 
 
 class RedactingFilter(logging.Filter):

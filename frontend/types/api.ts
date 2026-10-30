@@ -8,6 +8,7 @@ export type Stage =
   | "analyze"
   | "retrieve"
   | "plan"
+  | "research"
   | "diagnose"
   | "patch"
   | "validate"
@@ -42,6 +43,10 @@ export interface RepositoryInfo {
   source_file_count: number;
   manifests: string[];
   test_frameworks: string[];
+  frameworks: string[];
+  dependencies: string[];
+  test_commands: string[];
+  validation_supported: boolean;
   tree_summary: string;
   supported: boolean;
   support_note: string;
@@ -109,6 +114,7 @@ export interface Validation {
   scope: "full_suite" | "targeted" | null;
   fixed_tests: string[];
   pre_existing_failures: number;
+  detected_commands: string[];
   runs: TestRun[];
 }
 
@@ -116,6 +122,30 @@ export interface Attempt {
   iteration: number;
   outcome: string;
   detail: string;
+}
+
+export type SourceKind = "official" | "community" | "other";
+
+export interface ResearchSource {
+  id: string;
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  kind: SourceKind;
+  query: string;
+  score: number | null;
+  used: boolean;
+  relevance: string;
+}
+
+export interface ResearchReport {
+  status: "completed" | "unavailable" | "skipped";
+  provider: string;
+  queries: string[];
+  sources: ResearchSource[];
+  summary: string;
+  note: string;
 }
 
 export type Outcome = "patch_proposed" | "insufficient_evidence" | "no_valid_patch";
@@ -134,6 +164,7 @@ export interface RepairResult {
   risks: string[];
   limitations: string[];
   attempts: Attempt[];
+  research: ResearchReport | null;
   llm_model: string;
 }
 
@@ -171,6 +202,7 @@ export interface Health {
   version: string;
   environment: string;
   llm: { configured: boolean; model: string | null; provider_host: string | null };
+  research?: { configured: boolean; provider: string | null };
   sandbox: { enabled: boolean; available: boolean; detail: string };
   github_token_configured: boolean;
   limits: Record<string, number>;

@@ -12,6 +12,7 @@ import hashlib
 import logging
 import re
 import shutil
+from collections import Counter
 from typing import Protocol
 
 from app.core.config import Settings
@@ -27,6 +28,7 @@ from app.schemas.models import (
     RepairRequest,
     RepairResult,
     RepositoryInfo,
+    ResearchReport,
     Validation,
     ValidationStatus,
 )
@@ -40,6 +42,14 @@ from app.services.repository_service import (
     Workspace,
     make_readable_for_sandbox,
 )
+from app.services.research_service import (
+    ResearchService,
+    clean_text,
+    fallback_queries,
+    official_domains,
+    relevant_frameworks,
+    sanitize_queries,
+)
 from app.services.validation_service import ValidationService
 
 logger = logging.getLogger(__name__)
@@ -49,8 +59,8 @@ EventDetail = dict[str, str | int | float | bool | None]
 # Output-token caps per step. Providers count the requested ceiling against tokens-per-minute limits,
 # so each step asks only for what it needs.
 MIN_QUOTE_CHARS = 8  # shorter quotes (e.g. a lone `return`) are too generic to count as evidence
-PLAN_MAX_TOKENS = 1200
-DIAGNOSE_MAX_TOKENS = 2200
+PLAN_MAX_TOKENS = 1400
+DIAGNOSE_MAX_TOKENS = 2600
 PATCH_MAX_TOKENS = 2800
 
 
@@ -117,8 +127,10 @@ class RepairAgent:
         analyzer: RepositoryAnalyzer,
         patches: PatchService,
         validator: ValidationService,
+        research: ResearchService | None = None,
     ) -> None:
         self._s = settings
+        self._research = research or ResearchService(settings)
         self._llm = llm
         self._repos = repos
         self._analyzer = analyzer
@@ -155,14 +167,19 @@ class RepairAgent:
             primary_language=profile.primary_language, languages=profile.languages,
             source_file_count=len(index.files), manifests=profile.manifests, test_frameworks=profile.test_frameworks,
             tree_summary=profile.tree_summary, supported=profile.supported, support_note=profile.support_note,
+            frameworks=profile.frameworks, dependencies=profile.dependencies, test_commands=profile.test_commands,
+            validation_supported=profile.validation_language is not None,
         )
         progress.set_repository(info)
         if not profile.supported:
             raise UnsupportedRepository(profile.support_note)
         progress.emit(
             "analyze", "completed",
-            f"{profile.primary_language} project; test framework: {', '.join(profile.test_frameworks) or 'none detected'}",
-            {"language": profile.primary_language, "test_frameworks": ", ".join(profile.test_frameworks)},
+            f"{profile.primary_language} project"
+            + (f" ({', '.join(profile.frameworks[:4])})" if profile.frameworks else "")
+            + f"; test framework: {', '.join(profile.test_frameworks) or 'none detected'}",
+            {"language": profile.primary_language, "frameworks": ", ".join(profile.frameworks),
+             "test_frameworks": ", ".join(profile.test_frameworks)},
         )
 
         # ---- 3. targeted search -----------------------------------------------------------------------
@@ -209,19 +226,24 @@ class RepairAgent:
             )
             return
 
-        # ---- 5. diagnose ------------------------------------------------------------------------------
+        # ---- 5. web research --------------------------------------------------------------------------
+        languages = self._investigated_languages(index, candidates, profile)
+        research = await self._run_research(request, profile, languages, plan.research_queries, progress)
+
+        # ---- 6. diagnose ------------------------------------------------------------------------------
         focus = {c.path: list(c.match_lines) for c in candidates}
         for fr in frames:
             focus.setdefault(fr.path, []).append(fr.line)
         hypotheses_text = "\n".join(f"- {h.title}: {h.reasoning}" for h in plan.hypotheses) or "(none)"
         progress.emit("diagnose", "started", "Reading the relevant files and comparing hypotheses")
         loaded = list(inspect)
-        diagnosis = await self._diagnose(request, plan, hypotheses_text, index, loaded, focus, extra_round=False)
+        diagnosis = await self._diagnose(request, plan, hypotheses_text, index, loaded, focus, research, extra_round=False)
         extra_paths = self._choose_files(diagnosis.needs_more_context, [], index, limit=3, exclude=set(loaded))
         if extra_paths:
             progress.emit("diagnose", "info", f"The analysis asked for more context; reading {len(extra_paths)} more files")
             loaded += extra_paths
-            diagnosis = await self._diagnose(request, plan, hypotheses_text, index, loaded, focus, extra_round=True)
+            diagnosis = await self._diagnose(request, plan, hypotheses_text, index, loaded, focus, research, extra_round=True)
+        self._apply_research_notes(research, diagnosis)
 
         evidence = self._verify_evidence(index, diagnosis.evidence)
         verified = [e for e in evidence if e.verified]
@@ -238,7 +260,7 @@ class RepairAgent:
             self._finish_without_patch(
                 progress, info, "insufficient_evidence", diagnosis.root_cause, hypotheses, evidence, candidates,
                 ["None of the code quotes cited by the AI could be found in the repository, so no patch was generated."],
-                confidence="low", risks=diagnosis.risks,
+                confidence="low", risks=diagnosis.risks, research=research,
             )
             return
 
@@ -253,16 +275,16 @@ class RepairAgent:
             self._finish_without_patch(
                 progress, info, "no_valid_patch", diagnosis.root_cause, hypotheses, evidence, candidates,
                 ["The faulty code is in files that a repair is not allowed to modify (tests, configuration or lock files)."],
-                confidence=confidence, risks=diagnosis.risks,
+                confidence=confidence, risks=diagnosis.risks, research=research,
             )
             return
 
         # ---- 6/7. patch + validate (bounded retry loop) -----------------------------------------------
         outcome = await self._patch_and_validate(
-            request, workspace, progress, index, profile, diagnosis, evidence, verified, targets, focus
+            request, workspace, progress, index, profile, diagnosis, evidence, verified, targets, focus, research
         )
         result = self._assemble(
-            outcome, diagnosis, hypotheses, evidence, confidence, candidates, profile
+            outcome, diagnosis, hypotheses, evidence, confidence, candidates, profile, research
         )
         progress.set_result(result)
         usage = f"{self._llm.calls} LLM calls, {self._llm.prompt_tokens + self._llm.completion_tokens} tokens"
@@ -274,9 +296,75 @@ class RepairAgent:
 
     # ======================================================================================================
     # diagnosis helpers
+    @staticmethod
+    def _investigated_languages(index: RepoIndex, candidates: list[RankedFile], profile: RepoProfile) -> list[str]:
+        """Languages of the files most likely involved; in a multi-project repository this is not the primary language."""
+        known = index.by_path()
+        langs = list(dict.fromkeys(known[c.path].language for c in candidates[:4] if c.path in known and known[c.path].language))
+        return langs or ([profile.primary_language] if profile.primary_language else [])
+
+    async def _run_research(
+        self, request: RepairRequest, profile: RepoProfile, languages: list[str], proposed: list[str], progress: Progress
+    ) -> ResearchReport:
+        """Search the web for documentation and known issues. Never fails the investigation."""
+        limit = self._s.research_max_queries
+        stack = relevant_frameworks(languages, profile.frameworks)
+        queries = sanitize_queries(
+            [*proposed, *fallback_queries(request.bug_description, request.stack_trace, languages[0] if languages else None, stack)],
+            limit,
+        )
+        if not self._research.configured:
+            note = "Web research is not configured on this server (no Tavily API key), so it was skipped."
+            progress.emit("research", "info", note)
+            return ResearchReport(status="skipped", note=note)
+        if not queries:
+            note = "No usable search query could be derived from the bug report."
+            progress.emit("research", "info", f"Web research skipped: {note}")
+            return ResearchReport(status="skipped", note=note)
+
+        progress.emit("research", "started", f"Searching the web with Tavily ({len(queries)} {'query' if len(queries) == 1 else 'queries'})")
+        outcome = await self._research.search(queries, official_domains(languages, profile.frameworks))
+        for query, count in outcome.per_query.items():
+            progress.emit("research", "info", f"“{query}” returned {count} {'result' if count == 1 else 'results'}", {"results": count})
+        if outcome.status != "completed":
+            progress.emit("research", "failed", f"Web research unavailable: {outcome.note} Continuing with repository evidence only.")
+            return ResearchReport(status="unavailable", queries=outcome.queries, note=outcome.note)
+        official = sum(1 for src in outcome.sources if src.kind == "official")
+        progress.emit(
+            "research", "completed",
+            f"Found {len(outcome.sources)} sources ({official} official documentation)",
+            {"sources": len(outcome.sources), "official": official},
+        )
+        return ResearchReport(status="completed", queries=outcome.queries, sources=outcome.sources)
+
+    @staticmethod
+    def _research_for_prompt(report: ResearchReport | None, *, used_only: bool = False, limit: int = 6) -> list[dict[str, str]]:
+        if report is None or report.status != "completed":
+            return []
+        picked = [s for s in report.sources if s.used or not used_only][:limit]
+        return [
+            {"id": s.id, "kind": s.kind, "title": s.title, "domain": s.domain, "snippet": s.snippet[:220]} for s in picked
+        ]
+
+    @staticmethod
+    def _apply_research_notes(report: ResearchReport, diagnosis: DiagnosisResponse) -> None:
+        """Attach the model's comparison to the sources it cited. Notes citing unknown sources are discarded."""
+        if report.status != "completed":
+            return
+        by_id = {s.id: s for s in report.sources}
+        for note in diagnosis.research_notes:
+            source = by_id.get(note.source_id.strip().upper())
+            relevance = clean_text(note.relevance, 600)
+            if source and relevance:
+                source.used, source.relevance = True, relevance
+        if any(s.used for s in report.sources):
+            report.summary = clean_text(diagnosis.research_summary, 1500)
+        else:
+            report.note = "The diagnosis did not rely on any of the sources that were found."
+
     async def _diagnose(
         self, request: RepairRequest, plan: PlanResponse, hypotheses_text: str, index: RepoIndex,
-        paths: list[str], focus: dict[str, list[int]], *, extra_round: bool,
+        paths: list[str], focus: dict[str, list[int]], research: ResearchReport, *, extra_round: bool,
     ) -> DiagnosisResponse:
         blocks = self._file_blocks(index, paths, focus, self._s.max_context_chars)
         return await self._llm.complete_json(
@@ -284,6 +372,7 @@ class RepairAgent:
             templates.diagnose_prompt(
                 bug=request.bug_description, trace=request.stack_trace, understanding=plan.understanding,
                 hypotheses=hypotheses_text, file_blocks=blocks, extra_round=extra_round,
+                research=templates.research_block(self._research_for_prompt(research)),
             ),
             DiagnosisResponse,
             max_tokens=DIAGNOSE_MAX_TOKENS,
@@ -356,13 +445,21 @@ class RepairAgent:
     async def _patch_and_validate(
         self, request: RepairRequest, workspace: Workspace, progress: Progress, index: RepoIndex,
         profile: RepoProfile, diagnosis: DiagnosisResponse, evidence: list[Evidence], verified: list[Evidence],
-        targets: list[str], focus: dict[str, list[int]],
+        targets: list[str], focus: dict[str, list[int]], research: ResearchReport,
     ) -> dict:
         s = self._s
         python = profile.primary_language == "Python"
         can_run, why_not = await self._validator.availability(
             language_supported=python, has_tests=profile.has_tests, frameworks=profile.test_frameworks,
         )
+        if not python and profile.primary_language:
+            known = index.by_path()
+            langs = Counter(known[e.file].language for e in verified if e.file in known and known[e.file].language)
+            language = langs.most_common(1)[0][0] if langs else profile.primary_language
+            commands = self._commands_near(profile.test_commands, [e.file for e in verified])
+            detected = f" Detected test command: {commands[0]}." if commands else ""
+            can_run, why_not = False, f"RepoPilot executes Python tests only, so the {language} tests were not run.{detected}"
+        research_text = templates.research_block(self._research_for_prompt(research, used_only=True, limit=3))
         patch_paths = list(dict.fromkeys(targets + [e.file for e in verified if not protected_reason(e.file)]))[:6]
         patch_focus = {**focus}
         for e in verified:
@@ -383,7 +480,7 @@ class RepairAgent:
                     templates.patch_prompt(
                         bug=request.bug_description, root_cause=diagnosis.root_cause, evidence=evidence_text,
                         file_blocks=file_blocks, feedback=feedback, want_regression_test=python,
-                        language=profile.primary_language or "",
+                        language=profile.primary_language or "", research=research_text,
                     ),
                     PatchResponse,
                     max_tokens=PATCH_MAX_TOKENS,
@@ -497,7 +594,7 @@ class RepairAgent:
     # result assembly
     def _assemble(
         self, outcome: dict, diagnosis: DiagnosisResponse, hypotheses: list[Hypothesis], evidence: list[Evidence],
-        confidence: str, candidates: list[RankedFile], profile: RepoProfile,
+        confidence: str, candidates: list[RankedFile], profile: RepoProfile, research: ResearchReport,
     ) -> RepairResult:
         final = outcome["final"]
         attempts: list[Attempt] = outcome["attempts"]
@@ -510,12 +607,17 @@ class RepairAgent:
             return RepairResult(
                 outcome="no_valid_patch", root_cause=diagnosis.root_cause, confidence=confidence,  # type: ignore[arg-type]
                 hypotheses=hypotheses, evidence=evidence, relevant_files=relevant,
-                validation=Validation(summary="Validation was not run because there is no valid patch."),
-                risks=diagnosis.risks, limitations=limitations, attempts=attempts, llm_model=self._s.llm_model,
+                validation=Validation(summary="Validation was not run because there is no valid patch.",
+                                      detected_commands=profile.test_commands),
+                risks=diagnosis.risks, limitations=limitations, attempts=attempts, research=research,
+                llm_model=self._s.llm_model,
             )
 
         build: PatchBuild = final["build"]
         validation: Validation = final["validation"]
+        validation.detected_commands = self._commands_near(
+            profile.test_commands, [c.path for c in build.changes] or [e.file for e in evidence]
+        )
         regression = final["regression"]
         if validation.status == ValidationStatus.NOT_RUN:
             limitations.append("The patch has NOT been tested.")
@@ -539,20 +641,22 @@ class RepairAgent:
             outcome="patch_proposed", root_cause=diagnosis.root_cause, confidence=confidence,  # type: ignore[arg-type]
             hypotheses=hypotheses, evidence=evidence, relevant_files=relevant, changes=build.changes, diff=build.diff,
             regression_test=regression, validation=validation, risks=risks, limitations=limitations,
-            attempts=attempts, llm_model=self._s.llm_model,
+            attempts=attempts, research=research, llm_model=self._s.llm_model,
         )
 
     def _finish_without_patch(
         self, progress: Progress, info: RepositoryInfo, outcome: str, root_cause: str,
         hypotheses: list[Hypothesis], evidence: list[Evidence], candidates: list[RankedFile],
         limitations: list[str], *, confidence: str = "low", risks: list[str] | None = None,
+        research: ResearchReport | None = None,
     ) -> None:
         result = RepairResult(
             outcome=outcome,  # type: ignore[arg-type]
             root_cause=root_cause, confidence=confidence,  # type: ignore[arg-type]
             hypotheses=hypotheses, evidence=evidence, relevant_files=self._relevant_files(candidates, evidence),
-            validation=Validation(summary="Validation was not run because no patch was generated."),
-            risks=risks or [], limitations=limitations, llm_model=self._s.llm_model,
+            validation=Validation(summary="Validation was not run because no patch was generated.",
+                                  detected_commands=info.test_commands),
+            risks=risks or [], limitations=limitations, research=research, llm_model=self._s.llm_model,
         )
         progress.set_result(result)
         progress.emit("finalize", "completed", f"Investigation finished without a patch: {outcome.replace('_', ' ')}")
@@ -560,10 +664,21 @@ class RepairAgent:
     # ======================================================================================================
     # small utilities
     @staticmethod
+    def _commands_near(commands: list[str], paths: list[str]) -> list[str]:
+        """In a repository with several projects, put the test command of the project that was changed first."""
+        def near(command: str) -> bool:
+            match = re.match(r"cd (\S+) && ", command)
+            return bool(match) and any(p.startswith(match.group(1) + "/") for p in paths)
+
+        return sorted(commands, key=lambda c: not near(c))
+
+    @staticmethod
     def _overview(info: RepositoryInfo, profile: RepoProfile) -> str:
         return (
             f"Repository: {info.owner}/{info.name}\nDescription: {info.description or '(none)'}\n"
             f"Primary language: {profile.primary_language}\nManifests: {', '.join(profile.manifests[:10]) or '(none)'}\n"
+            f"Frameworks and platforms: {', '.join(profile.frameworks[:10]) or '(none detected)'}\n"
+            f"Notable dependencies: {', '.join(profile.dependencies[:12]) or '(none detected)'}\n"
             f"Test frameworks: {', '.join(profile.test_frameworks) or '(none detected)'}\n"
             f"Structure:\n{profile.tree_summary}"
         )

@@ -3,10 +3,11 @@
 import { ArrowLeft, ChevronDown, Clock, Radio } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CodeChangesTab } from "@/components/investigation/code-changes-tab";
+import { CodeChangesTab, type Decision, type Decisions } from "@/components/investigation/code-changes-tab";
 import { OverviewTab } from "@/components/investigation/overview-tab";
 import { ProgressTimeline } from "@/components/investigation/progress-timeline";
 import { RepositoryCard } from "@/components/investigation/repository-card";
+import { ResearchTab } from "@/components/investigation/research-tab";
 import { RootCauseTab } from "@/components/investigation/root-cause-tab";
 import { FailureAlert, LoadErrorState, NotFoundState, WorkspaceSkeleton } from "@/components/investigation/states";
 import { TestResultsTab } from "@/components/investigation/test-results-tab";
@@ -84,11 +85,26 @@ function Workspace({ investigation, connection }: { investigation: Investigation
 function ResultTabs({ investigation }: { investigation: Investigation }) {
   const result = investigation.result!;
   const [tab, setTab] = useState("overview");
+  // Accept/reject choices live here so they survive switching tabs.
+  const [decisions, setDecisions] = useState<Decisions>({});
+  const decide = (path: string, decision: Decision | null) =>
+    setDecisions((prev) => {
+      const next = { ...prev };
+      if (decision) next[path] = decision;
+      else delete next[path];
+      return next;
+    });
+  const decideAll = (decision: Decision) => setDecisions(Object.fromEntries(result.changes.map((c) => [c.path, decision])));
+  const sources = result.research?.status === "completed" ? result.research.sources.length : 0;
   return (
     <Tabs value={tab} onValueChange={setTab}>
       <TabsList aria-label="Investigation results">
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="root-cause">Root Cause</TabsTrigger>
+        <TabsTrigger value="research">
+          Research
+          {sources > 0 ? <Badge className="px-1.5 py-0">{sources}</Badge> : null}
+        </TabsTrigger>
         <TabsTrigger value="changes">
           Code Changes
           {result.changes.length > 0 ? <Badge className="px-1.5 py-0">{result.changes.length}</Badge> : null}
@@ -99,13 +115,16 @@ function ResultTabs({ investigation }: { investigation: Investigation }) {
         </TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
-        <OverviewTab result={result} onViewChanges={() => setTab("changes")} />
+        <OverviewTab result={result} onViewChanges={() => setTab("changes")} onViewResearch={() => setTab("research")} />
       </TabsContent>
       <TabsContent value="root-cause">
         <RootCauseTab result={result} />
       </TabsContent>
+      <TabsContent value="research">
+        <ResearchTab research={result.research} />
+      </TabsContent>
       <TabsContent value="changes">
-        <CodeChangesTab result={result} investigationId={investigation.id} />
+        <CodeChangesTab result={result} decisions={decisions} onDecide={decide} onDecideAll={decideAll} />
       </TabsContent>
       <TabsContent value="tests">
         <TestResultsTab validation={result.validation} />

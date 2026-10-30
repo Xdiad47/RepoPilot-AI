@@ -12,6 +12,7 @@ from app.services.patch_service import PatchService
 from app.services.repair_agent import RepairAgent
 from app.services.repository_analyzer import RepositoryAnalyzer
 from app.services.repository_service import RepositoryService
+from app.services.research_service import ResearchService
 from app.services.validation_service import ValidationService
 
 
@@ -28,10 +29,11 @@ def build_container(settings: Settings) -> Container:
     analyzer = RepositoryAnalyzer()
     patches = PatchService(settings)
     validation = ValidationService(settings)
+    research = ResearchService(settings)
 
     def agent_factory() -> RepairAgent:
         # A fresh LLMService per investigation keeps token accounting per-investigation.
-        return RepairAgent(settings, LLMService(settings), repos, analyzer, patches, validation)
+        return RepairAgent(settings, LLMService(settings), repos, analyzer, patches, validation, research)
 
     return Container(
         settings=settings,

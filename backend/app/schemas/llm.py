@@ -23,6 +23,7 @@ class PlanResponse(_Lenient):
     hypotheses: list[PlanHypothesis] = Field(default_factory=list, max_length=6)
     search_terms: list[str] = Field(default_factory=list, max_length=15)
     files_to_inspect: list[str] = Field(default_factory=list, max_length=10)
+    research_queries: list[str] = Field(default_factory=list, max_length=6)
 
 
 # --- Step 2: diagnosis ------------------------------------------------------------------------------------
@@ -43,6 +44,11 @@ class HypothesisIn(_Lenient):
     evidence_against: list[str] = Field(default_factory=list, max_length=6)
 
 
+class ResearchNoteIn(_Lenient):
+    source_id: str = Field(max_length=20)
+    relevance: str = Field(default="", max_length=600, description="How this source relates to the code that was shown")
+
+
 class DiagnosisResponse(_Lenient):
     root_cause: str = Field(max_length=3000)
     confidence: Literal["high", "medium", "low"] = "low"
@@ -52,6 +58,8 @@ class DiagnosisResponse(_Lenient):
     files_to_modify: list[str] = Field(default_factory=list, max_length=8)
     needs_more_context: list[str] = Field(default_factory=list, max_length=6)
     risks: list[str] = Field(default_factory=list, max_length=8)
+    research_summary: str = Field(default="", max_length=1500)
+    research_notes: list[ResearchNoteIn] = Field(default_factory=list, max_length=10)
 
 
 # --- Step 3: patch ----------------------------------------------------------------------------------------

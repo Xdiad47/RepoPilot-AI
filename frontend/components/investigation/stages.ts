@@ -5,6 +5,7 @@ export const PIPELINE: { stage: Stage; label: string; description: string }[] = 
   { stage: "analyze", label: "Analyze", description: "Language & tests" },
   { stage: "retrieve", label: "Search", description: "Find relevant code" },
   { stage: "plan", label: "Plan", description: "Form hypotheses" },
+  { stage: "research", label: "Research", description: "Search the web for documentation" },
   { stage: "diagnose", label: "Diagnose", description: "Verify root cause" },
   { stage: "patch", label: "Patch", description: "Propose a fix" },
   { stage: "validate", label: "Validate", description: "Run tests" },

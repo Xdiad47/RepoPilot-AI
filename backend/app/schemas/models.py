@@ -30,7 +30,7 @@ class InvestigationStatus(StrEnum):
     FAILED = "failed"
 
 
-Stage = Literal["queued", "clone", "analyze", "retrieve", "plan", "diagnose", "patch", "validate", "finalize"]
+Stage = Literal["queued", "clone", "analyze", "retrieve", "plan", "research", "diagnose", "patch", "validate", "finalize"]
 EventStatus = Literal["started", "completed", "failed", "info"]
 
 
@@ -80,6 +80,10 @@ class RepositoryInfo(BaseModel):
     source_file_count: int = 0
     manifests: list[str] = Field(default_factory=list)
     test_frameworks: list[str] = Field(default_factory=list)
+    frameworks: list[str] = Field(default_factory=list, description="Frameworks and platforms detected from manifests and imports")
+    dependencies: list[str] = Field(default_factory=list, description="Notable declared dependencies")
+    test_commands: list[str] = Field(default_factory=list, description="Test commands inferred from configuration (informational)")
+    validation_supported: bool = Field(default=False, description="True when RepoPilot can execute this repository's tests")
     tree_summary: str = ""
     supported: bool = False
     support_note: str = ""
@@ -155,6 +159,9 @@ class Validation(BaseModel):
         description="full_suite: the whole suite passes. targeted: the previously failing tests now pass and nothing "
         "regressed, but unrelated failures that already existed remain.",
     )
+    detected_commands: list[str] = Field(
+        default_factory=list, description="Test commands inferred from the repository; shown even when they were not executed"
+    )
     fixed_tests: list[str] = Field(default_factory=list, description="Tests that failed before the patch and pass after it")
     pre_existing_failures: int = Field(default=0, description="Failures present both before and after the patch")
     runs: list[TestRun] = Field(default_factory=list)
@@ -164,6 +171,28 @@ class Attempt(BaseModel):
     iteration: int
     outcome: str
     detail: str = ""
+
+
+class ResearchSource(BaseModel):
+    id: str = Field(description="Short reference such as R1, used by the diagnosis to cite this source")
+    title: str
+    url: str
+    domain: str
+    snippet: str
+    kind: Literal["official", "community", "other"] = "other"
+    query: str = ""
+    score: float | None = None
+    used: bool = Field(default=False, description="True when the diagnosis explicitly compared this source with the code")
+    relevance: str = Field(default="", description="How the diagnosis relates this source to the repository issue")
+
+
+class ResearchReport(BaseModel):
+    status: Literal["completed", "unavailable", "skipped"]
+    provider: str = "Tavily"
+    queries: list[str] = Field(default_factory=list)
+    sources: list[ResearchSource] = Field(default_factory=list)
+    summary: str = ""
+    note: str = Field(default="", description="Why research was skipped or unavailable")
 
 
 class RepairResult(BaseModel):
@@ -180,6 +209,7 @@ class RepairResult(BaseModel):
     risks: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     attempts: list[Attempt] = Field(default_factory=list)
+    research: ResearchReport | None = None
     llm_model: str = ""
 
 

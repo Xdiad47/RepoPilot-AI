@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import type { Investigation } from "@/types/api";
-import { event, ID, investigation, notRun, passed, repo, result } from "./fixtures";
+import { event, ID, investigation, notRun, passed, repo, research, result, twoFileResult } from "./fixtures";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -292,7 +292,6 @@ describe("InvestigationView states", () => {
     await userEvent.click(screen.getByRole("tab", { name: /code changes/i }));
     const diff = screen.getByRole("region", { name: "Diff for app/api.py" });
     expect(within(diff).getByText(/if "@" in email else ""/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /download \.patch/i })).toHaveAttribute("href", expect.stringContaining("/diff"));
     expect(screen.getByText("Not executed")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Original file" }));
@@ -309,15 +308,170 @@ describe("InvestigationView states", () => {
     expect(screen.getByText("No patch was generated")).toBeInTheDocument();
   });
 
-  it("copies the diff to the clipboard", async () => {
+  it("copies only the accepted changes to the clipboard", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     showing({ investigation: investigation() });
     render(<InvestigationView id={ID} />);
     await userEvent.click(screen.getByRole("tab", { name: /code changes/i }));
-    fireEvent.click(screen.getByRole("button", { name: /copy full diff/i }));
+    expect(screen.getByRole("button", { name: /copy accepted diff/i })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: /accept all/i }));
+    fireEvent.click(screen.getByRole("button", { name: /copy accepted diff/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("--- a/app/api.py")));
     expect(await screen.findByText("Copied")).toBeInTheDocument();
+  });
+});
+
+describe("Accept and reject changes", () => {
+  async function openChanges() {
+    showing({ investigation: investigation({ result: twoFileResult() }) });
+    render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /code changes/i }));
+  }
+  const summary = () => screen.getByText(/to review/i).textContent;
+
+  it("starts with every file undecided and nothing to download", async () => {
+    await openChanges();
+    expect(summary()).toBe("0 accepted · 0 rejected · 2 to review");
+    expect(screen.getByRole("button", { name: /download accepted/i })).toBeDisabled();
+    expect(screen.getByText(/accept at least one file/i)).toBeInTheDocument();
+  });
+
+  it("accepts and rejects individual files and lets you change your mind", async () => {
+    await openChanges();
+    const api = within(screen.getByRole("group", { name: "Decision for app/api.py" }));
+    const util = within(screen.getByRole("group", { name: "Decision for app/util.py" }));
+    await userEvent.click(api.getByRole("button", { name: "Accept" }));
+    await userEvent.click(util.getByRole("button", { name: "Reject" }));
+    expect(summary()).toBe("1 accepted · 1 rejected · 0 to review");
+    expect(screen.getByRole("button", { name: /download accepted/i })).toBeEnabled();
+    await userEvent.click(api.getByRole("button", { name: "Accepted" }));
+    expect(summary()).toBe("0 accepted · 1 rejected · 1 to review");
+  });
+
+  it("the copied patch contains only the accepted files", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await openChanges();
+    await userEvent.click(within(screen.getByRole("group", { name: "Decision for app/util.py" })).getByRole("button", { name: "Accept" }));
+    fireEvent.click(screen.getByRole("button", { name: /copy accepted diff/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const copied = writeText.mock.calls.at(-1)![0] as string;
+    expect(copied).toContain("--- a/app/util.py");
+    expect(copied).not.toContain("app/api.py");
+    expect(copied.endsWith("\n")).toBe(true);
+  });
+
+  it("downloads the accepted patch as repopilot.patch", async () => {
+    const created = vi.fn(() => "blob:test");
+    Object.defineProperty(URL, "createObjectURL", { value: created, configurable: true });
+    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    await openChanges();
+    await userEvent.click(screen.getByRole("button", { name: /accept all/i }));
+    await userEvent.click(screen.getByRole("button", { name: /download accepted/i }));
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
+  });
+
+  it("accept all and reject all apply to every file, and decisions survive switching tabs", async () => {
+    await openChanges();
+    await userEvent.click(screen.getByRole("button", { name: /accept all/i }));
+    expect(summary()).toBe("2 accepted · 0 rejected · 0 to review");
+    await userEvent.click(screen.getByRole("button", { name: /reject all/i }));
+    expect(summary()).toBe("0 accepted · 2 rejected · 0 to review");
+    await userEvent.click(screen.getByRole("tab", { name: /overview/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /code changes/i }));
+    expect(summary()).toBe("0 accepted · 2 rejected · 0 to review");
+  });
+
+  it("says plainly that RepoPilot never changes the repository", async () => {
+    await openChanges();
+    expect(screen.getByText(/never changes your repository/i)).toBeInTheDocument();
+  });
+});
+
+describe("Research tab", () => {
+  const withResearch = (r: Investigation["result"]) => showing({ investigation: investigation({ result: r }) });
+
+  it("lists sources with their kind, puts the ones compared with the code first, and shows how they relate", async () => {
+    withResearch(result({ research }));
+    render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /research/i }));
+    expect(screen.getByText("3 sources found with Tavily")).toBeInTheDocument();
+    const items = within(screen.getByRole("list", { name: "Research sources" })).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("Built-in exceptions");
+    expect(items[0]).toHaveTextContent("Official documentation");
+    expect(items[0]).toHaveTextContent("Compared with your code");
+    expect(items[0]).toHaveTextContent("How it relates to this bug");
+    expect(items[1]).toHaveTextContent("Community");
+    expect(screen.getByText(/context, never proof/i)).toBeInTheDocument();
+    expect(screen.getByText(research.summary)).toBeInTheDocument();
+    expect(screen.getByText("python str.split documentation")).toBeInTheDocument();
+  });
+
+  it("opens sources safely and never renders a non-web link", async () => {
+    withResearch(result({ research }));
+    render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /research/i }));
+    const link = screen.getByRole("link", { name: /built-in exceptions/i });
+    expect(link).toHaveAttribute("href", "https://docs.python.org/3/library/exceptions.html");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    expect(screen.queryByRole("link", { name: /sneaky link/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Sneaky link")).toBeInTheDocument();
+  });
+
+  it("is honest when research was skipped, failed or predates the feature", async () => {
+    withResearch(result({ research: { ...research, status: "unavailable", sources: [], note: "Web research found nothing usable: the Tavily usage limit was reached." } }));
+    const { unmount } = render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /research/i }));
+    expect(screen.getByText("Web research was not used for this investigation")).toBeInTheDocument();
+    expect(screen.getByText(/usage limit was reached/i)).toBeInTheDocument();
+    unmount();
+
+    withResearch(result({ research: null }));
+    render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /research/i }));
+    expect(screen.getByText(/before web research existed/i)).toBeInTheDocument();
+  });
+
+  it("the overview summarises the research and links to it", async () => {
+    withResearch(result({ research }));
+    render(<InvestigationView id={ID} />);
+    expect(screen.getByText(/3 sources found with Tavily; 1 compared with the code/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /view sources/i }));
+    expect(screen.getByRole("tab", { name: /research/i })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("shows a Research step in the progress panel", () => {
+    showing({ investigation: investigation() });
+    render(<InvestigationView id={ID} />);
+    expect(within(screen.getByRole("list", { name: "Pipeline stages" })).getByText("Research")).toBeInTheDocument();
+  });
+});
+
+describe("Cross-language repository overview", () => {
+  it("shows stack, dependencies and a detected test command that RepoPilot will not run", () => {
+    showing({
+      investigation: investigation({
+        repository: { ...repo, primary_language: "Dart", languages: { Dart: 40, Kotlin: 6 }, frameworks: ["Flutter", "Provider"], dependencies: ["provider", "dio"], test_commands: ["flutter test"], test_frameworks: ["flutter_test"], validation_supported: false },
+      }),
+    });
+    render(<InvestigationView id={ID} />);
+    expect(screen.getByText("Flutter")).toBeInTheDocument();
+    expect(screen.getByText("flutter test")).toBeInTheDocument();
+    expect(screen.getByText(/detected, not run by repopilot/i)).toBeInTheDocument();
+    expect(screen.getByText(/dependencies \(2\)/i)).toBeInTheDocument();
+  });
+
+  it("lists detected test commands on the Test Results tab and says they were not run", async () => {
+    showing({ investigation: investigation({ result: result({ validation: { ...notRun, detected_commands: ["go test ./..."] } }) }) });
+    render(<InvestigationView id={ID} />);
+    await userEvent.click(screen.getByRole("tab", { name: /test results/i }));
+    expect(screen.getByText("go test ./...")).toBeInTheDocument();
+    expect(screen.getByText(/these were not run by repopilot/i)).toBeInTheDocument();
   });
 });
 

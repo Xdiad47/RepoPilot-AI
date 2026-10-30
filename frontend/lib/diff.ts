@@ -21,6 +21,8 @@ export interface DiffFile {
   removedOldLines: Set<number>;
   /** 1-based line numbers in the PATCHED file that the patch adds. */
   addedNewLines: Set<number>;
+  /** This file's section of the diff, exactly as the backend produced it (ready for `git apply`). */
+  raw: string;
 }
 
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
@@ -42,14 +44,16 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
   let newLeft = 0;
 
   const lines = diff.replace(/\n$/, "").split("\n");
+  const starts: number[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const hunkOpen = hunk !== null && (oldLeft > 0 || newLeft > 0);
 
     if (!hunkOpen && line.startsWith("--- ") && lines[i + 1]?.startsWith("+++ ")) {
       const path = lines[i + 1].slice(4).replace(/^b\//, "").trim();
-      file = { path, hunks: [], additions: 0, deletions: 0, removedOldLines: new Set(), addedNewLines: new Set() };
+      file = { path, hunks: [], additions: 0, deletions: 0, removedOldLines: new Set(), addedNewLines: new Set(), raw: "" };
       files.push(file);
+      starts.push(i);
       hunk = null;
       i += 1;
       continue;
@@ -87,5 +91,13 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
       newLeft--;
     }
   }
+  files.forEach((f, n) => {
+    f.raw = lines.slice(starts[n], starts[n + 1] ?? lines.length).join("\n") + "\n";
+  });
   return files;
+}
+
+/** The diff restricted to the given file paths, in original order. Empty string when none match. */
+export function diffForPaths(files: DiffFile[], paths: ReadonlySet<string>): string {
+  return files.filter((f) => paths.has(f.path)).map((f) => f.raw).join("");
 }

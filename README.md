@@ -2,9 +2,15 @@
 
 **Find the bug. Understand the cause. Fix it with evidence.**
 
-RepoPilot AI is a multi-agent code-repair system. Give it a public GitHub repository and a bug report; it inspects the
-real source, proves its diagnosis with code quoted from the repo, proposes a minimal patch, and (when a sandbox is
-available) runs the project's tests before and after the patch. It never claims a fix it didn't verify.
+RepoPilot AI is a language-agnostic repository repair assistant. Give it a public GitHub repository (Python, JavaScript,
+TypeScript, Java, Kotlin, Swift, Dart/Flutter, Go, Rust, C/C++, C#, PHP, Ruby and more) and a bug report. It detects the
+stack from the repository itself, searches the web with Tavily for official documentation and known issues, proves its
+diagnosis with code quoted from the repo, and proposes a minimal patch that you accept or reject file by file. For Python
+repositories, when a sandbox is available, it also runs the tests before and after the patch. It never claims a fix it
+didn't verify.
+
+It is one LLM used in role-specialised steps (plan, research, diagnose, patch), orchestrated in a fixed order by code with
+retries. It is not a swarm of autonomous agents, and the model has no tools.
 
 **Live:** https://repo-pilot-ai-three.vercel.app · **API health:** https://repopilot-api.scanlyy.in/api/health
 
@@ -30,6 +36,7 @@ flowchart LR
   A --> R[Repository service<br/>shallow clone, filters, limits]
   A --> G[Repair agent]
   G -- OpenAI-compatible --> L[(LLM: Groq / any provider)]
+  G -- short search queries only --> T[(Tavily web search)]
   G --> P[Patch service<br/>edits → diff → strict re-validation]
   G --> V[Validation service]
   V -- no network, read-only,<br/>unprivileged, limits --> S[[Docker sandbox]]
@@ -38,11 +45,13 @@ flowchart LR
 | Stage | What really happens |
 | --- | --- |
 | **Clone** | GitHub metadata check, hardened shallow clone into a private per-investigation workspace (no hooks, no submodules, no symlinks). |
-| **Analyze** | Language, manifests, test framework, stack-trace frame → file mapping, keyword search, symbol ranking (Python via `ast`). |
-| **Plan** | LLM proposes hypotheses and files to read. Only paths that exist are accepted. |
-| **Diagnose** | LLM compares hypotheses and must quote real code. Quotes are located in the file; unverifiable evidence lowers confidence or stops the run. |
+| **Analyze** | Languages (by file extension), frameworks and dependencies (from manifests and imports), test frameworks and test commands, stack-trace frame → file mapping for many ecosystems, keyword search, symbol ranking. |
+| **Plan** | LLM proposes hypotheses, files to read and web search queries. Only paths that exist are accepted. |
+| **Research** | [Tavily](https://tavily.com) searches (plus one search limited to the stack's official documentation sites). Results are de-duplicated, classified (official / community / other), ranked official-first and shown with their links. Only a short query leaves the server, with key-like strings masked; repository code is never sent. If Tavily is missing or fails, the run continues and says so. |
+| **Diagnose** | LLM compares hypotheses and must quote real code, and compares each web source it uses with that code. Quotes are located in the file; unverifiable evidence lowers confidence or stops the run. Web sources are context only, never evidence. |
 | **Patch** | LLM returns exact `search → replace` edits (not a hand-written diff). The backend builds the unified diff itself, then dry-run applies it with zero fuzz. Protected files (secrets, CI, lockfiles, test config, existing tests) are rejected. |
-| **Validate** | Baseline run, patch applied to a disposable copy, patched run, compared. Failures feed back into a bounded retry loop. |
+| **Review** (in the UI) | Accept or reject each changed file, then copy or download only the accepted files as one patch. Nothing is ever pushed or applied for you. |
+| **Validate** | Python only: baseline run, patch applied to a disposable copy, patched run, compared. Failures feed back into a bounded retry loop. For other languages the detected test command is shown and reported as *not run*. |
 
 ### Validation statuses
 
@@ -51,7 +60,23 @@ flowchart LR
 | `passed` | The patched run exited 0 (`scope: full_suite`), **or** previously failing tests now pass with no new failures (`scope: targeted`; unrelated pre-existing failures are reported). |
 | `failed` | Tests still fail, or the patch introduced new failures. |
 | `inconclusive` | Timeout, collection/import errors, missing dependencies in the offline sandbox, sandbox crash. |
-| `not_run` | "Validation unavailable": sandbox disabled/unreachable, non-Python repo, or no tests. |
+| `not_run` | "Validation unavailable": sandbox disabled/unreachable, non-Python repo (the detected test command is shown instead), or no tests. |
+
+### What works for which language
+
+| | Python | Other languages |
+| --- | --- | --- |
+| Stack, framework, dependency and test-command detection | yes | yes |
+| Web research and official-docs search | yes | yes |
+| Evidence-verified diagnosis and patch proposal | yes | yes (tested end to end on Go, Dart, Kotlin and TypeScript fixtures) |
+| Regression-test suggestion | yes | no |
+| Test execution in the sandbox | yes, when the sandbox is enabled | **no**: the command is detected and shown, not run |
+
+### AI provider and hardware
+
+The model is any OpenAI-compatible endpoint, set with `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY` (Groq by default,
+or a self-hosted server such as vLLM). RepoPilot has **not** been run on AMD or any other specific accelerator; pointing
+it at a model served from an AMD GPU is supported by the configuration but untested.
 
 ## Repository layout
 
@@ -164,7 +189,8 @@ The full, step-by-step guide is in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 See **[docs/SECURITY.md](docs/SECURITY.md)**. Highlights:
 
 * Repository content is untrusted: shallow clone with hooks/symlinks/submodules disabled, size/file/time limits, never executed in the API process.
-* The LLM has no tools. It returns JSON that is schema-validated; it never chooses commands. Prompts fence untrusted text and neutralise forged tags.
+* The LLM has no tools. It returns JSON that is schema-validated; it never chooses commands. Prompts fence untrusted text (repository files, bug reports, test output and web search results) and neutralise forged tags.
+* The Tavily key lives only in the server environment and is redacted from logs. Web sources are untrusted data and are shown with their real links.
 * Tests run only inside a Docker sandbox: no network, read-only root FS, all capabilities dropped, uid 65534, CPU/memory/PID/output/time limits. If it isn't available, validation is reported as unavailable, never faked.
 * The sandbox is offline, so project dependencies are not installed: repositories that need third-party packages to run their tests will report `inconclusive`.
 * AI-generated patches can be wrong. Always review them.

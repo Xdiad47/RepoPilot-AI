@@ -50,7 +50,7 @@ export function ProgressTimeline({ investigation }: { investigation: Investigati
         <span className="text-xs text-faint">{investigation.events.length} events</span>
       </CardHeader>
       <CardBody className="space-y-4">
-        <ol className="grid grid-cols-4 gap-2" aria-label="Pipeline stages">
+        <ol className="grid grid-cols-3 gap-2" aria-label="Pipeline stages">
           {PIPELINE.map(({ stage, label, description }) => (
             <li
               key={stage}

@@ -163,7 +163,7 @@ export function RepairForm() {
             id={`${ids}-bug`}
             name="bug_description"
             rows={4}
-            placeholder="My Python API returns a 500 error when the user submits an empty email address. Find the cause and propose a fix."
+            placeholder="e.g. My Flutter app crashes when navigating from the login screen to the dashboard. Find the cause and propose a fix."
             value={bug}
             invalid={Boolean(errors.bug)}
             aria-describedby={errors.bug ? `${ids}-bug-error` : undefined}

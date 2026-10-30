@@ -234,3 +234,57 @@ class TestRegressionTest:
 
     def test_none_proposal(self, svc, index):
         assert svc.prepare_regression_test(None, index) == (None, None)
+
+
+class TestIndentationTolerance:
+    """Models often mangle indentation. A unique match that differs only in indentation is accepted, and the
+    replacement is written in the FILE's indentation style."""
+
+    GO = "package shop\n\nfunc Apply(total float64, percent float64) float64 {\n\treturn total - total*percent/10\n}\n"
+    PY = "def f(x):\n    if x:\n        return x - 1\n    return 0\n"
+
+    def build(self, settings, tmp_path, name, content, *edits):
+        repo = tmp_path / "ind_repo"
+        repo.mkdir(exist_ok=True)
+        (repo / name).write_text(content, encoding="utf-8")
+        index = RepositoryService(settings).index(repo)
+        return PatchService(settings).build_patch([EditIn(path=name, search=s, replace=r, explanation="e") for s, r in edits], index)
+
+    def test_missing_indentation_is_restored_from_the_file_tab(self, settings, tmp_path):
+        build = self.build(settings, tmp_path, "cart.go", self.GO, ("return total - total*percent/10", "return total - total*percent/100"))
+        assert build.ok, build.problems
+        assert "-\treturn total - total*percent/10\n" in build.diff
+        assert "+\treturn total - total*percent/100\n" in build.diff
+        assert "+    " not in build.diff
+
+    def test_spaces_in_the_search_are_mapped_onto_the_files_tabs(self, settings, tmp_path):
+        build = self.build(
+            settings, tmp_path, "cart.go", self.GO,
+            ("    return total - total*percent/10\n", "    if percent > 100 {\n        percent = 100\n    }\n    return total - total*percent/100\n"),
+        )
+        assert build.ok, build.problems
+        patched = build.changes[0].patched_content
+        assert "\tif percent > 100 {\n\t\tpercent = 100\n\t}\n\treturn total - total*percent/100\n" in patched
+
+    def test_tabs_in_the_replacement_become_the_files_spaces(self, settings, tmp_path):
+        build = self.build(settings, tmp_path, "m.py", self.PY, ("return x - 1", "if x > 5:\n\treturn x\nreturn x - 1"))
+        assert build.ok, build.problems
+        patched = build.changes[0].patched_content
+        assert "        if x > 5:\n            return x\n        return x - 1\n" in patched
+
+    def test_exact_indentation_is_untouched(self, settings, tmp_path):
+        build = self.build(settings, tmp_path, "m.py", self.PY, ("        return x - 1\n", "        return x - 2\n"))
+        assert build.ok and "+        return x - 2\n" in build.diff
+
+    def test_an_ambiguous_indentation_insensitive_match_is_rejected(self, settings, tmp_path):
+        two = "def a():\n    return 1\n\ndef b():\n        return 1\n"
+        build = self.build(settings, tmp_path, "m.py", two, ("return 1", "return 2"))
+        assert not build.ok and "matches 2 places" in build.problems[0]
+
+    def test_text_that_really_is_absent_is_still_rejected(self, settings, tmp_path):
+        build = self.build(settings, tmp_path, "m.py", self.PY, ("return x - 99", "return 0"))
+        assert not build.ok and "not found" in build.problems[0]
+
+    def test_python_syntax_is_still_checked_after_reindenting(self, settings, tmp_path):
+        build = self.build(settings, tmp_path, "m.py", self.PY, ("return x - 1", "return (x - 1"))
+        assert not build.ok and "not be valid Python" in build.problems[0]

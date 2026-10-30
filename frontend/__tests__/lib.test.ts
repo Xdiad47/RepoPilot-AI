@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError, api, describeError } from "@/lib/api";
 import { resolveApiBaseUrl } from "@/lib/config";
-import { parseUnifiedDiff } from "@/lib/diff";
+import { diffForPaths, parseUnifiedDiff } from "@/lib/diff";
 import { clearRecent, loadRecent, saveRecent } from "@/lib/storage";
 import { formatDuration, formatKb, isGithubUrl, normalizeRepoInput, truncate } from "@/lib/utils";
 import { verdictFor } from "@/lib/verdict";
-import { DIFF, notRun, passed, result } from "./fixtures";
+import { DIFF, notRun, passed, result, TWO_FILE_DIFF } from "./fixtures";
 
 describe("isGithubUrl", () => {
   it.each(["https://github.com/octocat/hello", "https://github.com/octocat/hello/", "https://www.github.com/o/r.git", "https://github.com/o/repo.name_x"])(
@@ -219,5 +219,29 @@ describe("recent investigations storage", () => {
     saveRecent({ id: id(3), repositoryUrl: "https://github.com/o/r", bug: "b" });
     const stored = window.localStorage.getItem("repopilot:recent:v1") ?? "";
     expect(stored).not.toMatch(/key|token|secret/i);
+  });
+});
+
+describe("per-file diff sections", () => {
+  it("keeps each file's exact text so accepted files can be re-assembled into a valid patch", () => {
+    const files = parseUnifiedDiff(TWO_FILE_DIFF);
+    expect(files.map((f) => f.path)).toEqual(["app/api.py", "app/util.py"]);
+    expect(files[0].raw.startsWith("--- a/app/api.py\n+++ b/app/api.py\n@@")).toBe(true);
+    expect(files[0].raw).not.toContain("util.py");
+    expect(files.map((f) => f.raw).join("")).toBe(TWO_FILE_DIFF);
+  });
+
+  it("selects only the requested files and returns nothing for an empty selection", () => {
+    const files = parseUnifiedDiff(TWO_FILE_DIFF);
+    expect(diffForPaths(files, new Set(["app/util.py"]))).toBe(files[1].raw);
+    expect(diffForPaths(files, new Set())).toBe("");
+    expect(diffForPaths(files, new Set(["missing.py"]))).toBe("");
+  });
+
+  it("handles removed lines that look like file headers", () => {
+    const tricky = "--- a/q.sql\n+++ b/q.sql\n@@ -1,2 +1,1 @@\n--- a comment\n keep\n";
+    const files = parseUnifiedDiff(tricky);
+    expect(files).toHaveLength(1);
+    expect(files[0].raw).toBe(tricky);
   });
 });

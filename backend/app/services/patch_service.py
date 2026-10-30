@@ -234,6 +234,61 @@ class PatchBuild:
         return bool(self.diff) and not self.problems
 
 
+_LEADING_WS = re.compile(r"^[ \t]*")
+
+
+def _lead(line: str) -> str:
+    return _LEADING_WS.match(line).group(0)  # type: ignore[union-attr]
+
+
+def _reindent(search_lines: list[str], block: list[str], replace_lines: list[str], whole_file: list[str]) -> list[str]:
+    """Rewrite the model's indentation in ``replace_lines`` in the file's own style.
+
+    ``search_lines`` and ``block`` (the real lines they matched) pair up one to one, which gives a map from each
+    indentation the model used to the indentation the file really has. Deeper lines are converted between spaces
+    and tabs using the file's style (taken from the whole file, not just the matched block).
+    """
+    pairs: dict[str, str] = {}
+    for model_line, file_line in zip(search_lines, block, strict=False):
+        if model_line.strip():
+            pairs.setdefault(_lead(model_line), _lead(file_line))
+    if not pairs:
+        return replace_lines
+
+    sample = [_lead(b) for b in whole_file[:600] if b.strip()]
+    file_uses_tabs = any("\t" in _lead(b) for b in block if b.strip()) or sum("\t" in i for i in sample) > sum(bool(i) and "\t" not in i for i in sample)
+    model_space_widths = [len(i) for i in (_lead(x) for x in (*search_lines, *replace_lines) if x.strip()) if i and "\t" not in i]
+    model_unit = min(model_space_widths) if model_space_widths else 4
+    file_space_widths = [len(i) for i in sample if i and "\t" not in i]
+    file_unit = min(file_space_widths) if file_space_widths else 4
+    shallowest = min(pairs, key=len)
+
+    def convert(extra: str) -> str:
+        if file_uses_tabs:
+            spaces = len(extra.replace("\t", ""))
+            return "\t" * (extra.count("\t") + spaces // model_unit) + " " * (spaces % model_unit)
+        return extra.replace("\t", " " * file_unit)
+
+    out: list[str] = []
+    for line in replace_lines:
+        if not line.strip():
+            out.append(line)
+            continue
+        lead = _lead(line)
+        body = line[len(lead) :]
+        if lead in pairs:
+            out.append(pairs[lead] + body)
+            continue
+        parents = [k for k in pairs if lead.startswith(k)]
+        if parents:
+            parent = max(parents, key=len)
+            out.append(pairs[parent] + convert(lead[len(parent) :]) + body)
+        else:
+            extra = lead[len(shallowest) :] if lead.startswith(shallowest) else ""
+            out.append(pairs[shallowest] + convert(extra) + body)
+    return out
+
+
 class PatchService:
     def __init__(self, settings: Settings) -> None:
         self._s = settings
@@ -353,12 +408,20 @@ class PatchService:
         hits = matches(lambda s: s)
         if not hits:
             hits = matches(lambda s: s.rstrip())  # tolerate trailing-whitespace differences only
+        reindent = False
+        if not hits:
+            # Models often lose or change indentation (tabs shown as spaces, a dropped leading tab). Accept a match that
+            # differs only in indentation, provided it is unique, and carry the FILE's indentation into the replacement.
+            hits = matches(lambda s: s.strip())
+            reindent = bool(hits)
         if not hits:
             return "the 'search' text was not found in the file (it must be copied exactly)."
         if len(hits) > 1:
             return f"the 'search' text matches {len(hits)} places; include more surrounding lines to make it unique."
         i = hits[0]
         n = len(search_lines)
+        if reindent:
+            replace_lines = _reindent(search_lines, plain[i : i + n], replace_lines, plain)
         was_last = i + n == len(lines) and lines[-1].endswith(NOEOL)
         new_block = list(replace_lines)
         if was_last and new_block:

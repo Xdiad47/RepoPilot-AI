@@ -36,9 +36,35 @@ export function TestResultsTab({ validation }: { validation: Validation }) {
           <CardBody className="space-y-2 text-sm leading-6 text-muted">
             <p>
               <strong className="text-fg">Nothing was executed.</strong> No test output exists for this investigation, and none is shown here
-              on purpose. Validation needs the Docker sandbox to be enabled on the server, a Python repository, and a detectable test suite.
+              on purpose. RepoPilot runs tests only for Python repositories, and only when the Docker sandbox is enabled on the server.
             </p>
             {validation.reason ? <p className="font-mono text-xs text-faint">reason: {validation.reason}</p> : null}
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {validation.detected_commands?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="inline-flex items-center gap-2">
+              <Terminal className="h-4 w-4 text-accent" aria-hidden /> Detected test {validation.detected_commands.length === 1 ? "command" : "commands"}
+            </CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-2">
+            <ul className="space-y-2">
+              {validation.detected_commands.map((command) => (
+                <li key={command} className="flex flex-wrap items-center justify-between gap-2">
+                  <code className="min-w-0 break-all rounded bg-surface-2 px-2 py-1 font-mono text-[12px]">{command}</code>
+                  <CopyButton text={command} label="Copy" className="border border-border" />
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-faint">
+              Inferred from the repository&apos;s configuration.{" "}
+              {validation.runs.length > 0
+                ? "The runs below show what was actually executed."
+                : "These were not run by RepoPilot: run them yourself after applying the patch."}
+            </p>
           </CardBody>
         </Card>
       ) : null}
@@ -107,7 +133,7 @@ function RunCard({ run }: { run: TestRun }) {
         ) : null}
         <details className="group rounded-lg border border-border">
           <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-sm text-muted hover:text-fg">
-            <span>Raw output{run.output_truncated ? " (truncated)" : ""}</span>
+            <span>Console output (stdout and stderr){run.output_truncated ? ", truncated" : ""}</span>
             <CopyButton text={run.output} />
           </summary>
           <pre className="scroll-thin max-h-96 overflow-auto border-t border-border bg-bg p-3 font-mono text-xs leading-5 whitespace-pre-wrap break-words">

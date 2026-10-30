@@ -51,6 +51,10 @@ LANGUAGE_BY_EXTENSION = {
     ".java": "Java", ".kt": "Kotlin", ".go": "Go", ".rs": "Rust", ".rb": "Ruby", ".php": "PHP",
     ".c": "C", ".h": "C", ".cc": "C++", ".cpp": "C++", ".hpp": "C++", ".cs": "C#", ".swift": "Swift",
     ".scala": "Scala", ".sh": "Shell", ".lua": "Lua", ".dart": "Dart", ".r": "R",
+    ".kts": "Kotlin", ".m": "Objective-C", ".mm": "Objective-C++", ".cxx": "C++", ".hh": "C++", ".hxx": "C++",
+    ".vue": "Vue", ".svelte": "Svelte", ".ex": "Elixir", ".exs": "Elixir", ".hs": "Haskell", ".clj": "Clojure",
+    ".jl": "Julia", ".pl": "Perl", ".pm": "Perl", ".ps1": "PowerShell", ".groovy": "Groovy", ".zig": "Zig",
+    ".fs": "F#", ".vb": "Visual Basic",
 }
 
 

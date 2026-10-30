@@ -61,17 +61,19 @@ def llm_script(overrides=None):
     return script
 
 
-def build(settings, repo, llm, runner=None):
+def build(settings, repo, llm, runner=None, research=None):
     validator = ValidationService(settings, runner=runner)
-    return RepairAgent(settings, llm, FakeRepositoryService(settings, repo), RepositoryAnalyzer(), PatchService(settings), validator)
+    return RepairAgent(
+        settings, llm, FakeRepositoryService(settings, repo), RepositoryAnalyzer(), PatchService(settings), validator, research
+    )
 
 
-async def investigate(settings, repo, llm, runner=None, workspace_id="c" * 32, request=REQUEST):
+async def investigate(settings, repo, llm, runner=None, workspace_id="c" * 32, request=REQUEST, research=None):
     ws = Workspace(settings.workspace_root, workspace_id)
     ws.create()
     progress = Recorder()
     try:
-        await build(settings, repo, llm, runner).run(request, ws, progress)
+        await build(settings, repo, llm, runner, research).run(request, ws, progress)
     finally:
         ws.cleanup()
     return progress
@@ -98,7 +100,7 @@ class TestHonestWithoutSandbox:
     async def test_events_are_real_and_ordered(self, settings, fixture_repo):
         p = await investigate(settings, fixture_repo, ScriptedLLM(llm_script()))
         first_seen = list(dict.fromkeys(p.stages))
-        assert first_seen == ["clone", "analyze", "retrieve", "plan", "diagnose", "patch", "validate", "finalize"]
+        assert first_seen == ["clone", "analyze", "retrieve", "plan", "research", "diagnose", "patch", "validate", "finalize"]
         assert p.events[-1][:2] == ("finalize", "completed")
 
     async def test_evidence_is_read_from_the_repo_not_copied_from_the_model(self, settings, fixture_repo):
@@ -230,12 +232,47 @@ class TestPromptInjection:
         assert not hasattr(parsed, "commands") and not hasattr(parsed, "run")
 
 
-class TestUnsupported:
-    async def test_unsupported_language_fails_honestly_but_keeps_repo_info(self, settings, tmp_path):
+class TestOtherLanguages:
+    GO_BUG = (
+        "package cart\n\nfunc Discount(total float64, percent float64) float64 {\n"
+        "\treturn total - total*percent/10\n}\n"
+    )
+
+    def go_repo(self, tmp_path):
         repo = tmp_path / "go_repo"
         repo.mkdir()
-        (repo / "main.go").write_text("package main\n")
-        (repo / "b.go").write_text("package main\n")
+        (repo / "go.mod").write_text("module demo\n\ngo 1.22\n")
+        (repo / "cart.go").write_text(self.GO_BUG)
+        (repo / "cart_test.go").write_text("package cart\n")
+        return repo
+
+    async def test_non_python_repository_gets_a_real_diagnosis_and_honest_validation(self, settings, tmp_path):
+        from app.schemas.llm import EditIn, EvidenceIn
+
+        diagnosis = good_diagnosis()
+        diagnosis.evidence = [EvidenceIn(file="cart.go", start_line=4, end_line=4, quote="return total - total*percent/10",
+                                         explanation="divides by 10, not 100")]
+        diagnosis.files_to_modify = ["cart.go"]
+        plan = good_plan()
+        plan.files_to_inspect = ["cart.go"]
+        patch = PatchResponse(edits=[EditIn(path="cart.go", search="\treturn total - total*percent/10\n",
+                                  replace="\treturn total - total*percent/100\n", explanation="percent is out of 100")])
+        request = RepairRequest(repository_url="https://github.com/octocat/demo", bug_description="Discount() removes too much from the total.")
+        p = await investigate(settings, self.go_repo(tmp_path), ScriptedLLM(llm_script({
+            PlanResponse: [plan], DiagnosisResponse: [diagnosis], PatchResponse: [patch],
+        })), request=request)
+        r = p.result
+        assert p.repository.primary_language == "Go" and p.repository.supported
+        assert r.outcome == "patch_proposed" and "-\treturn total - total*percent/10" in r.diff
+        assert r.validation.status == ValidationStatus.NOT_RUN
+        assert "executes Python tests only" in r.validation.summary and "the Go tests were not run" in r.validation.summary
+        assert "go test ./..." in r.validation.summary
+        assert r.validation.detected_commands == ["go test ./..."]
+
+    async def test_repository_without_source_code_fails_honestly_but_keeps_repo_info(self, settings, tmp_path):
+        repo = tmp_path / "docs_repo"
+        repo.mkdir()
+        (repo / "README.md").write_text("# hello\n")
         ws = Workspace(settings.workspace_root, "d" * 32)
         ws.create()
         progress = Recorder()
@@ -243,8 +280,8 @@ class TestUnsupported:
         with pytest.raises(UnsupportedRepository):
             await build(settings, repo, llm).run(REQUEST, ws, progress)
         ws.cleanup()
-        assert progress.repository.primary_language == "Go" and progress.repository.supported is False
-        assert llm.calls == 0  # no tokens spent on unsupported repos
+        assert progress.repository.supported is False
+        assert llm.calls == 0  # no tokens spent when there is nothing to analyse
 
 
 class TestWithSandbox:
@@ -404,3 +441,14 @@ class TestEvidenceStrictness:
         diag = good_diagnosis(quote='    6|     domain = email.split("@")[1]', line=6)
         r = (await investigate(settings, fixture_repo, ScriptedLLM(llm_script({DiagnosisResponse: [diag]})))).result
         assert r.evidence[0].verified and r.evidence[0].start_line == 6
+
+
+class TestMonorepoCommands:
+    def test_the_command_of_the_changed_project_comes_first(self):
+        commands = ["cd web && npm test", "cd go-cart && go test ./...", "cd flutter-app && flutter test"]
+        ordered = RepairAgent._commands_near(commands, ["go-cart/cart.go"])
+        assert ordered[0] == "cd go-cart && go test ./..." and set(ordered) == set(commands)
+
+    def test_unrelated_paths_keep_the_original_order(self):
+        commands = ["npm test", "cd api && go test ./..."]
+        assert RepairAgent._commands_near(commands, ["src/x.ts"]) == commands

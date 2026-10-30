@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, Loader2, ShieldAlert, ShieldCheck, Wifi } from "lucide-react";
+import { CircleAlert, Globe, Loader2, ShieldAlert, ShieldCheck, Wifi } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { HealthState } from "@/hooks/use-health";
 
@@ -21,12 +21,21 @@ export function BackendStatus({ state }: { state: HealthState }) {
       </Badge>
     );
   }
-  const { llm, sandbox } = state.health;
+  const { llm, sandbox, research } = state.health;
   return (
     <div className="flex flex-wrap items-center justify-center gap-2">
       <Badge tone={llm.configured ? "success" : "danger"}>
         <Wifi className="h-3 w-3" aria-hidden /> {llm.configured ? `AI online · ${llm.model}` : "AI provider not configured"}
       </Badge>
+      {research?.configured ? (
+        <Badge tone="success">
+          <Globe className="h-3 w-3" aria-hidden /> Web research · {research.provider ?? "on"}
+        </Badge>
+      ) : (
+        <Badge tone="neutral" title="No search key is configured on this server">
+          <Globe className="h-3 w-3" aria-hidden /> Web research off
+        </Badge>
+      )}
       {sandbox.available ? (
         <Badge tone="success">
           <ShieldCheck className="h-3 w-3" aria-hidden /> Sandboxed test validation on

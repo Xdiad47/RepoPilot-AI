@@ -12,15 +12,19 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from app.services.repository_service import RepoIndex
-
-SUPPORTED_LANGUAGES = {"Python": "full", "JavaScript": "analysis", "TypeScript": "analysis"}
+from app.services.repository_service import LANGUAGE_BY_EXTENSION, RepoIndex
+from app.services.stack_detector import detect_stack
 
 MANIFEST_NAMES = {
     "requirements.txt", "requirements-dev.txt", "pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "tox.ini",
     "pytest.ini", "conftest.py", "package.json", "tsconfig.json", "go.mod", "Cargo.toml", "pom.xml",
-    "build.gradle", "Gemfile", "composer.json",
+    "build.gradle", "build.gradle.kts", "settings.gradle", "gradlew", "Gemfile", "composer.json", "pubspec.yaml",
+    "Package.swift", "Podfile", "CMakeLists.txt", "Makefile", "AndroidManifest.xml", "Info.plist", "mix.exs",
 }
+MANIFEST_SUFFIXES = (".csproj", ".sln", ".pbxproj")
+
+# Languages whose test execution RepoPilot can actually run in its sandbox today.
+EXECUTABLE_TEST_LANGUAGES = {"Python"}
 
 STOPWORDS = {
     "the", "and", "that", "this", "with", "when", "from", "have", "has", "was", "are", "not", "but", "for", "its",
@@ -36,7 +40,27 @@ _PY_FRAME = re.compile(r'File "([^"]+)", line (\d+)(?:, in ([\w<>\.]+))?')
 _JS_FRAME = re.compile(r"(?:at\s+(?:([\w$.<>\[\] ]+?)\s+\()?)([^\s()]+?\.(?:js|jsx|ts|tsx|mjs|cjs)):(\d+)(?::\d+)?\)?")
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _QUOTED = re.compile(r"[`'\"]([^`'\"\n]{2,60})[`'\"]")
-_PATHISH = re.compile(r"[\w\-./]+\.(?:py|js|jsx|ts|tsx|mjs|cjs)")
+_EXTENSIONS = "|".join(sorted((e.lstrip(".") for e in LANGUAGE_BY_EXTENSION), key=len, reverse=True))
+_PATHISH = re.compile(rf"[\w\-./]+\.(?:{_EXTENSIONS})\b")
+# Stack-trace frames of other ecosystems: Java/Kotlin "(Main.java:42)", Go/Rust/Swift/Ruby "file.go:42[:7]", C# ".cs:line 42",
+# Dart "foo.dart 12:5", PHP "x.php on line 12".
+_GENERIC_FRAME = re.compile(rf"([\w\-./\\$@]+\.(?:{_EXTENSIONS})):(?:line\s+)?(\d+)(?::\d+)?")
+_PHP_FRAME = re.compile(r"([\w\-./\\]+\.php)(?:\s+on\s+line\s+|\()(\d+)")
+_DART_FRAME = re.compile(r"([\w\-./\\:]+\.dart)\s+(\d+):\d+")
+
+
+_DEFINITION = re.compile(
+    r"\s*(?:(?:export|default|public|private|protected|internal|static|final|abstract|open|override|suspend|async|pub|unsafe|inline|"
+    r"virtual|data|sealed|const|extern|external|late|mutating|fileprivate)\s+)*"
+    r"(?:function\*?|class|struct|enum|interface|trait|impl|object|protocol|extension|func|fn|def|fun|defmodule|module|namespace)\s+"
+    r"([A-Za-z_$][\w$]*)|\s*(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\("
+)
+# C-family / JVM / .NET method headers: "<modifiers> ReturnType name(args) {"
+_TYPED_METHOD = re.compile(
+    r"\s*(?:(?:public|private|protected|internal|static|final|virtual|override|async|inline|extern|unsafe|synchronized|abstract)\s+)*"
+    r"[A-Za-z_][\w<>\[\],.:?*&\s]*?\s+\*?&?([A-Za-z_]\w*)\s*\([^;)]*\)?[^;]*\{\s*$"
+)
+_NOT_NAMES = {"if", "for", "while", "switch", "catch", "return", "else", "do", "try", "synchronized", "using", "lock", "foreach", "elif"}
 
 
 @dataclass
@@ -65,6 +89,9 @@ class RepoProfile:
     support_note: str
     validation_language: str | None  # language we can run tests for (currently Python only)
     has_tests: bool
+    frameworks: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+    test_commands: list[str] = field(default_factory=list)  # inferred, informational unless the language is executable
 
 
 class RepositoryAnalyzer:
@@ -72,8 +99,16 @@ class RepositoryAnalyzer:
     def profile(self, index: RepoIndex) -> RepoProfile:
         counts: Counter[str] = Counter(f.language for f in index.files if f.language)
         primary = counts.most_common(1)[0][0] if counts else None
-        manifests = sorted({f.path for f in index.files if f.path.rsplit("/", 1)[-1] in MANIFEST_NAMES})[:25]
-        frameworks = self._detect_test_frameworks(index, primary)
+        manifests = sorted({
+            f.path for f in index.files
+            if f.path.rsplit("/", 1)[-1] in MANIFEST_NAMES or f.path.endswith(MANIFEST_SUFFIXES)
+        }, key=lambda p: (p.count("/"), p))[:25]
+        stack = detect_stack(index)
+        frameworks = sorted(set(self._detect_test_frameworks(index, primary)) | set(stack.test_frameworks), key=str.lower)
+        commands = list(stack.test_commands)
+        if primary == "Python":
+            commands = [*(["pytest"] if "pytest" in frameworks else []),
+                        *(["python -m unittest"] if "unittest" in frameworks and "pytest" not in frameworks else []), *commands]
         has_tests = any(self._is_test_path(f.path) for f in index.files)
 
         if primary is None:
@@ -81,12 +116,13 @@ class RepositoryAnalyzer:
         elif primary == "Python":
             supported = True
             note = "Python is fully supported: analysis, patch generation and (when the sandbox is enabled) test validation."
-        elif primary in SUPPORTED_LANGUAGES:
-            supported = True
-            note = f"{primary} is supported for analysis and patch proposals. Automated test validation is Python-only, so validation will be reported as not run."
         else:
-            supported = False
-            note = f"{primary} repositories are not supported yet. RepoPilot AI currently supports Python (full) and JavaScript/TypeScript (analysis only)."
+            supported = True
+            ran = f" Detected test command: {commands[0]}." if commands else ""
+            note = (
+                f"{primary} is analysed and patched from repository evidence. Test execution is Python-only today, "
+                f"so validation will be reported as not run.{ran}"
+            )
 
         return RepoProfile(
             primary_language=primary,
@@ -96,8 +132,11 @@ class RepositoryAnalyzer:
             tree_summary=self._tree_summary(index),
             supported=supported,
             support_note=note,
-            validation_language="Python" if primary == "Python" else None,
+            validation_language="Python" if primary in EXECUTABLE_TEST_LANGUAGES else None,
             has_tests=has_tests,
+            frameworks=stack.frameworks,
+            dependencies=stack.dependencies,
+            test_commands=commands[:5],
         )
 
     @staticmethod
@@ -105,10 +144,14 @@ class RepositoryAnalyzer:
         lowered = path.lower()
         name = lowered.rsplit("/", 1)[-1]
         parts = lowered.split("/")
+        stem = name.rsplit(".", 1)[0]
         return (
-            any(p in {"test", "tests", "__tests__", "spec"} for p in parts[:-1])
+            any(p in {"test", "tests", "__tests__", "spec", "specs", "androidtest", "unittest", "uitests", "testing"} for p in parts[:-1])
             or name.startswith("test_")
-            or name.endswith(("_test.py", ".test.js", ".test.ts", ".spec.js", ".spec.ts", ".test.tsx", ".spec.tsx"))
+            or name.endswith(("_test.py", ".test.js", ".test.ts", ".spec.js", ".spec.ts", ".test.tsx", ".spec.tsx", ".test.jsx", ".spec.jsx",
+                              "_test.go", "_test.dart", "_test.rs", "_spec.rb", "_test.rb", "_test.exs", "_test.cc", "_test.cpp"))
+            or stem.endswith(("test", "tests", "spec")) and not stem.endswith(("latest", "contest"))
+            and name.rsplit(".", 1)[-1] in {"java", "kt", "swift", "cs", "php", "scala", "m"}
         )
 
     def _detect_test_frameworks(self, index: RepoIndex, primary: str | None) -> list[str]:
@@ -185,6 +228,13 @@ class RepositoryAnalyzer:
             if path and (path, int(m.group(3))) not in seen:
                 seen.add((path, int(m.group(3))))
                 frames.append(Frame(path, int(m.group(3)), (m.group(1) or "").strip() or None))
+        for pattern in (_GENERIC_FRAME, _PHP_FRAME, _DART_FRAME):
+            for m in pattern.finditer(text or ""):
+                path = resolve(m.group(1))
+                line = int(m.group(2))
+                if path and (path, line) not in seen:
+                    seen.add((path, line))
+                    frames.append(Frame(path, line))
         return frames
 
     def extract_keywords(self, text: str, extra: list[str] | None = None, limit: int = 25) -> list[str]:
@@ -227,7 +277,7 @@ class RepositoryAnalyzer:
         ranked: list[RankedFile] = []
 
         for f in index.files:
-            if f.language not in SUPPORTED_LANGUAGES:
+            if not f.language:
                 continue
             is_test = self._is_test_path(f.path)
             score = 0.0
@@ -299,9 +349,11 @@ class RepositoryAnalyzer:
             return "\n".join(f"  {name} (lines {start}-{end})" for name, start, end in symbols[:80])
         found = []
         for ln, line in enumerate(text.splitlines(), 1):
-            m = re.match(r"\s*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|class\s+(\w+)|const\s+(\w+)\s*=\s*(?:async\s*)?\()", line)
+            m = _DEFINITION.match(line) or _TYPED_METHOD.match(line)
             if m:
-                found.append(f"  {next(g for g in m.groups() if g)} (line {ln})")
+                name = next(g for g in m.groups() if g)
+                if name not in _NOT_NAMES:
+                    found.append(f"  {name} (line {ln})")
         return "\n".join(found[:80])
 
     def render_context(

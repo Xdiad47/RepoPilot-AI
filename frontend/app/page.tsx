@@ -23,8 +23,9 @@ export default function HomePage() {
               Fix it with evidence.
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-pretty text-base leading-7 text-muted sm:text-lg">
-              Paste a public GitHub repository and describe what&apos;s broken. RepoPilot finds the faulty code, proves its diagnosis with
-              quotes from your repo, and proposes a minimal patch. It tells you plainly whether that patch was tested.
+              Paste a public GitHub repository, in almost any language, and describe what&apos;s broken. RepoPilot finds the faulty code,
+              checks the official documentation on the web, proves its diagnosis with quotes from your repo, and proposes a minimal patch you
+              can accept or reject. It tells you plainly whether that patch was tested.
             </p>
 
             <ol className="mx-auto mt-7 flex max-w-2xl flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted" aria-label="How to use RepoPilot">

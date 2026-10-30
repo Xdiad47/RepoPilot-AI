@@ -186,12 +186,22 @@ class TestAnalyzerProfile:
         assert "pytest" in profile.test_frameworks and profile.has_tests
         assert "requirements.txt" in profile.manifests
 
-    def test_unsupported_language_is_reported_honestly(self, settings, tmp_path):
-        (tmp_path / "main.go").write_text("package main\n")
-        (tmp_path / "util.go").write_text("package main\n")
+    def test_repository_without_source_code_is_reported_honestly(self, settings, tmp_path):
+        (tmp_path / "README.md").write_text("# docs only\n")
+        (tmp_path / "config.yaml").write_text("a: 1\n")
         profile = RepositoryAnalyzer().profile(self.index_of(settings, tmp_path))
-        assert profile.primary_language == "Go" and not profile.supported
-        assert "not supported" in profile.support_note
+        assert profile.primary_language is None and not profile.supported
+        assert "No recognizable source files" in profile.support_note
+
+    def test_any_language_is_analysed_but_only_python_tests_are_executable(self, settings, tmp_path):
+        (tmp_path / "main.go").write_text("package main\n")
+        (tmp_path / "main_test.go").write_text("package main\n")
+        (tmp_path / "go.mod").write_text("module demo\n\nrequire github.com/gin-gonic/gin v1.9.0\n")
+        profile = RepositoryAnalyzer().profile(self.index_of(settings, tmp_path))
+        assert profile.primary_language == "Go" and profile.supported
+        assert profile.validation_language is None
+        assert "Gin" in profile.frameworks and profile.test_commands == ["go test ./..."]
+        assert "Python-only" in profile.support_note and "go test ./..." in profile.support_note
 
     def test_javascript_is_analysis_only(self, settings, tmp_path):
         (tmp_path / "index.js").write_text("module.exports = 1;\n")

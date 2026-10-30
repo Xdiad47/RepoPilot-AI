@@ -61,3 +61,11 @@ The VPS is shared with production sites and has 1 vCPU / 2 GB, so the recommende
 4. Set `SANDBOX_ENABLED=true`; confirm `/api/health` shows `sandbox.available: true`.
 
 For a demo, running the backend locally (or on a separate small VM) with the sandbox on is the safer alternative.
+
+## Web research (Tavily)
+
+* The search key is read from the server environment only, is never sent to the browser, and is redacted from logs.
+* Only a short plain-text query leaves the server. It is derived from the bug report, single-line, length-limited, has URLs removed and key-like strings masked. Repository source code is never sent.
+* Search results are untrusted. They are length-limited, de-duplicated, restricted to http(s) links without embedded credentials, and shown to the model inside a fenced tag that it is told never to obey. A forged closing tag inside a result is neutralised.
+* Web sources can explain how an API should behave but are never accepted as evidence: only code quoted from the repository and verified against the real file counts.
+* If the search fails or the key is missing, the investigation continues and the result states that research was not used.

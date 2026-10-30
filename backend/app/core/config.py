@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     llm_max_output_tokens: int = Field(default=3000, ge=256, le=32768)  # hard ceiling per call
     llm_reasoning_effort: str = ""  # optional ("low"|"medium"|"high"); only sent when set, for reasoning models
 
+    # --- Web research (Tavily). Optional: without a key the research step is skipped and reported as such ---
+    tavily_api_key: str = ""
+    tavily_base_url: str = "https://api.tavily.com"
+    research_max_queries: int = Field(default=2, ge=1, le=4)
+    research_results_per_query: int = Field(default=5, ge=1, le=10)
+    research_official_pass: bool = True  # one extra search limited to the stack's official documentation sites
+    research_timeout_seconds: float = Field(default=20, gt=0, le=120)
+
     # --- HTTP / CORS ---
     # Comma-separated list of allowed browser origins, e.g. "https://x.vercel.app,http://localhost:3000"
     frontend_origin: str = "http://localhost:3000"
@@ -69,7 +77,7 @@ class Settings(BaseSettings):
     result_ttl_hours: int = Field(default=24, ge=1, le=720)
     max_stored_investigations: int = Field(default=200, ge=10, le=10000)
 
-    @field_validator("llm_base_url")
+    @field_validator("llm_base_url", "tavily_base_url")
     @classmethod
     def _strip_base_url(cls, value: str) -> str:
         return value.strip().rstrip("/")
@@ -81,6 +89,10 @@ class Settings(BaseSettings):
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_api_key.strip() and self.llm_base_url and self.llm_model.strip())
+
+    @property
+    def research_configured(self) -> bool:
+        return bool(self.tavily_api_key.strip() and self.tavily_base_url)
 
     @property
     def is_production(self) -> bool:

@@ -1,4 +1,4 @@
-import type { Investigation, InvestigationEvent, RepairResult, RepositoryInfo, Validation } from "@/types/api";
+import type { Investigation, InvestigationEvent, RepairResult, RepositoryInfo, ResearchReport, Validation } from "@/types/api";
 
 export const ID = "a".repeat(32);
 
@@ -16,6 +16,10 @@ export const repo: RepositoryInfo = {
   source_file_count: 5,
   manifests: ["requirements.txt"],
   test_frameworks: ["pytest"],
+  frameworks: ["FastAPI"],
+  dependencies: ["fastapi", "pydantic"],
+  test_commands: ["pytest"],
+  validation_supported: true,
   tree_summary: "",
   supported: true,
   support_note: "Python is fully supported.",
@@ -40,6 +44,7 @@ export const notRun: Validation = {
   scope: null,
   fixed_tests: [],
   pre_existing_failures: 0,
+  detected_commands: ["pytest"],
   runs: [],
 };
 
@@ -51,6 +56,7 @@ export const passed: Validation = {
   scope: "full_suite",
   fixed_tests: ["tests/test_a.py::test_x"],
   pre_existing_failures: 0,
+  detected_commands: ["pytest"],
   runs: [
     { label: "baseline", command: ["python", "-m", "pytest"], exit_code: 1, timed_out: false, duration_seconds: 0.7, output: "1 failed, 1 passed in 0.1s", output_truncated: false, passed: 1, failed: 1, errors: 0, failed_tests: ["tests/test_a.py::test_x"] },
     { label: "patched", command: ["python", "-m", "pytest"], exit_code: 0, timed_out: false, duration_seconds: 0.5, output: "2 passed in 0.1s", output_truncated: false, passed: 2, failed: 0, errors: 0, failed_tests: [] },
@@ -87,6 +93,7 @@ export function result(overrides: Partial<RepairResult> = {}): RepairResult {
     risks: ["Behavior change for malformed emails"],
     limitations: ["The patch has NOT been tested."],
     attempts: [{ iteration: 1, outcome: "patch_proposed", detail: "Not validated." }],
+    research: null,
     llm_model: "test-model",
     ...overrides,
   };
@@ -120,3 +127,45 @@ export function investigation(overrides: Partial<Investigation> = {}): Investiga
     ...overrides,
   };
 }
+
+export const TWO_FILE_DIFF = `--- a/app/api.py
++++ b/app/api.py
+@@ -3,5 +3,5 @@
+ 
+ def register(payload):
+     email = payload["email"]
+-    domain = email.split("@")[1]
++    domain = email.split("@")[1] if "@" in email else ""
+     return {"domain": domain}
+--- a/app/util.py
++++ b/app/util.py
+@@ -1,3 +1,3 @@
+ def clean(value):
+-    return value.strip()
++    return (value or "").strip()
+`;
+
+export function twoFileResult(overrides: Partial<RepairResult> = {}): RepairResult {
+  const base = result();
+  return result({
+    diff: TWO_FILE_DIFF,
+    changes: [
+      base.changes[0],
+      { path: "app/util.py", explanation: "Handle None.", additions: 1, deletions: 1, original_content: null, patched_content: null },
+    ],
+    ...overrides,
+  });
+}
+
+export const research: ResearchReport = {
+  status: "completed",
+  provider: "Tavily",
+  queries: ["python IndexError split on empty string", "python str.split documentation"],
+  summary: "The Python docs confirm that indexing past the end of a list raises IndexError, which matches the unguarded split.",
+  note: "",
+  sources: [
+    { id: "R1", title: "Stack Overflow: split index error", url: "https://stackoverflow.com/q/1", domain: "stackoverflow.com", snippet: "You split on @ with no @.", kind: "community", query: "q", score: 0.9, used: false, relevance: "" },
+    { id: "R2", title: "Built-in exceptions", url: "https://docs.python.org/3/library/exceptions.html", domain: "docs.python.org", snippet: "IndexError is raised when a sequence subscript is out of range.", kind: "official", query: "q", score: 0.6, used: true, relevance: "Confirms split()[1] raises IndexError when no '@' is present." },
+    { id: "R3", title: "Sneaky link", url: "javascript:alert(1)", domain: "evil.test", snippet: "", kind: "other", query: "q", score: null, used: false, relevance: "" },
+  ],
+};

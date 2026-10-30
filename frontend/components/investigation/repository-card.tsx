@@ -1,10 +1,11 @@
-import { ExternalLink, FileCode2, FlaskConical, GitCommit, HardDrive, Star } from "lucide-react";
+import { ExternalLink, FileCode2, FlaskConical, GitCommit, HardDrive, Layers, Package, Star, Terminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody } from "@/components/ui/card";
 import { formatKb } from "@/lib/utils";
 import type { RepositoryInfo } from "@/types/api";
 
 export function RepositoryCard({ repo }: { repo: RepositoryInfo }) {
+  const languages = Object.entries(repo.languages ?? {}).slice(0, 6);
   return (
     <Card>
       <CardBody className="space-y-3">
@@ -33,10 +34,25 @@ export function RepositoryCard({ repo }: { repo: RepositoryInfo }) {
           <Stat icon={<Star className="h-3.5 w-3.5" />} label="Stars" value={repo.stars == null ? "—" : String(repo.stars)} />
         </dl>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="inline-flex items-center gap-1.5 text-muted">
-            <FlaskConical className="h-3.5 w-3.5" aria-hidden /> Tests:
-          </span>
+        {languages.length > 1 ? (
+          <Row icon={<FileCode2 className="h-3.5 w-3.5" aria-hidden />} label="Languages">
+            {languages.map(([name, count]) => (
+              <Badge key={name}>
+                {name} <span className="text-faint">{count}</span>
+              </Badge>
+            ))}
+          </Row>
+        ) : null}
+        {repo.frameworks?.length ? (
+          <Row icon={<Layers className="h-3.5 w-3.5" aria-hidden />} label="Stack">
+            {repo.frameworks.map((f) => (
+              <Badge key={f} tone="accent">
+                {f}
+              </Badge>
+            ))}
+          </Row>
+        ) : null}
+        <Row icon={<FlaskConical className="h-3.5 w-3.5" aria-hidden />} label="Tests">
           {repo.test_frameworks.length ? (
             repo.test_frameworks.map((f) => <Badge key={f}>{f}</Badge>)
           ) : (
@@ -47,10 +63,45 @@ export function RepositoryCard({ repo }: { repo: RepositoryInfo }) {
               {m}
             </Badge>
           ))}
-        </div>
+        </Row>
+        {repo.test_commands?.length ? (
+          <Row icon={<Terminal className="h-3.5 w-3.5" aria-hidden />} label="Test command">
+            {repo.test_commands.slice(0, 2).map((c) => (
+              <code key={c} className="break-all rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[12px]">
+                {c}
+              </code>
+            ))}
+            <span className="text-faint">{repo.validation_supported ? "runs in the sandbox when it is enabled" : "detected, not run by RepoPilot"}</span>
+          </Row>
+        ) : null}
+        {repo.dependencies?.length ? (
+          <details className="group text-xs">
+            <summary className="inline-flex cursor-pointer select-none items-center gap-1.5 text-muted hover:text-fg">
+              <Package className="h-3.5 w-3.5" aria-hidden /> Dependencies ({repo.dependencies.length})
+            </summary>
+            <p className="mt-2 flex flex-wrap gap-1.5">
+              {repo.dependencies.map((d) => (
+                <Badge key={d} className="font-mono font-normal">
+                  {d}
+                </Badge>
+              ))}
+            </p>
+          </details>
+        ) : null}
         {repo.support_note ? <p className="text-xs text-faint">{repo.support_note}</p> : null}
       </CardBody>
     </Card>
+  );
+}
+
+function Row({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="inline-flex min-w-24 items-center gap-1.5 text-muted">
+        {icon} {label}:
+      </span>
+      {children}
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-import { ArrowRight, FileCode2, ListChecks, TriangleAlert } from "lucide-react";
+import { ArrowRight, FileCode2, Globe, ListChecks, TriangleAlert } from "lucide-react";
 import { ValidationBadge } from "@/components/investigation/validation-badge";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import type { Level, RepairResult } from "@/types/api";
 
 const levelTone: Record<Level, "success" | "warning" | "danger"> = { high: "success", medium: "warning", low: "danger" };
 
-export function OverviewTab({ result, onViewChanges }: { result: RepairResult; onViewChanges?: () => void }) {
+export function OverviewTab({ result, onViewChanges, onViewResearch }: { result: RepairResult; onViewChanges?: () => void; onViewResearch?: () => void }) {
   const verdict = verdictFor(result);
   const additions = result.changes.reduce((n, c) => n + c.additions, 0);
   const deletions = result.changes.reduce((n, c) => n + c.deletions, 0);
@@ -45,6 +45,8 @@ export function OverviewTab({ result, onViewChanges }: { result: RepairResult; o
           </span>
         </Metric>
       </div>
+
+      <ResearchCard research={result.research} onView={onViewResearch} />
 
       <Card>
         <CardHeader>
@@ -100,6 +102,40 @@ export function OverviewTab({ result, onViewChanges }: { result: RepairResult; o
         <ListCard title="Limitations" items={result.limitations} empty="None reported." warn />
       </div>
     </div>
+  );
+}
+
+function ResearchCard({ research, onView }: { research: RepairResult["research"]; onView?: () => void }) {
+  const found = research?.status === "completed";
+  const used = found ? research.sources.filter((s) => s.used).length : 0;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="inline-flex items-center gap-2">
+          <Globe className="h-4 w-4 text-accent" aria-hidden /> Web research
+        </CardTitle>
+        {found && onView ? (
+          <Button variant="ghost" size="sm" onClick={onView}>
+            View sources <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+          </Button>
+        ) : null}
+      </CardHeader>
+      <CardBody className="space-y-2 text-sm leading-6">
+        {found ? (
+          <>
+            <p className="text-muted">
+              {research.sources.length} sources found with {research.provider}
+              {used > 0 ? `; ${used} compared with the code.` : "; none were needed for this diagnosis."}
+            </p>
+            {research.summary ? <p className="text-fg/90">{research.summary}</p> : null}
+          </>
+        ) : (
+          <p className="text-muted">
+            Not used for this investigation{research?.note ? `: ${research.note}` : "."} The diagnosis relies on repository evidence only.
+          </p>
+        )}
+      </CardBody>
+    </Card>
   );
 }
 

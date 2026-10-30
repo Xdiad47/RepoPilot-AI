@@ -107,9 +107,17 @@ _LOCKFILES = {
 _TEST_CONFIG_NAMES = {
     "conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml", "package.json", "noxfile.py",
     "jest.config.js", "jest.config.ts", "vitest.config.ts", "vitest.config.js", ".mocharc.json",
+    # build and dependency manifests of other ecosystems: they decide which tests run and what gets installed
+    "pubspec.yaml", "build.gradle", "build.gradle.kts", "settings.gradle", "pom.xml", "cargo.toml", "go.mod",
+    "gemfile", "composer.json", "package.swift", "cmakelists.txt", "podfile", "phpunit.xml", "mix.exs",
 }
-_TEST_DIR_PARTS = {"test", "tests", "__tests__", "spec", "specs", "testing"}
-_TEST_FILE_GLOBS = ["test_*.py", "*_test.py", "*.test.js", "*.test.ts", "*.test.jsx", "*.test.tsx", "*.spec.js", "*.spec.ts", "*.spec.jsx", "*.spec.tsx"]
+_TEST_DIR_PARTS = {"test", "tests", "__tests__", "spec", "specs", "testing", "androidtest", "unittest", "uitests"}
+_TEST_FILE_GLOBS = [
+    "test_*.py", "*_test.py", "*.test.js", "*.test.ts", "*.test.jsx", "*.test.tsx", "*.spec.js", "*.spec.ts", "*.spec.jsx",
+    "*.spec.tsx", "*_test.go", "*_test.dart", "*_test.rs", "*_spec.rb", "*_test.rb", "*_test.exs", "*_test.cc", "*_test.cpp",
+    "*Test.java", "*Tests.java", "*Test.kt", "*Tests.kt", "*Spec.kt", "*Tests.swift", "*Test.swift", "*Tests.cs", "*Test.cs",
+    "*Test.php", "*Tests.php", "*Spec.scala", "*Test.scala",
+]
 
 
 def _matches_any(name: str, globs: list[str]) -> bool:
